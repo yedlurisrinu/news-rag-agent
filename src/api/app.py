@@ -22,8 +22,8 @@ Endpoints:
   GET  /ready    — readiness probe (pings Elasticsearch)
 """
 
-from py_commons_per.logging_setup import setup_logging
-from py_commons_per.vault_secret_loader import load_secrets
+from config.logging_setup import setup_logging
+from config.vault_secrets import load_secrets
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -114,7 +114,7 @@ async def query(request: QueryRequest) -> QueryResponse:
       3. SummaryAgent         — gpt-4o-mini summarization
     """
     logger.info("POST /query  query=%r", request.query)
-    result = run_manager_agent(request.query)
+    result = run_manager_agent(str(request.query)) # ty: ignore[invalid-argument-type]  # T03-S15: langsmith 0.1.x ParamSpec; remove after upgrade
 
     if result.error:
         raise HTTPException(

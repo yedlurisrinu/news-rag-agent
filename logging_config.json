@@ -14,7 +14,7 @@
         },
         "file": {
             "class": "logging.FileHandler",
-            "filename": "/app/logs/news-search-summary-app.log",
+            "filename": "/app/logs/news-rag-agent.log",
             "formatter": "standard",
             "level": "INFO"
         }

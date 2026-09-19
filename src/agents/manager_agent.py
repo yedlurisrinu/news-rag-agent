@@ -83,7 +83,7 @@ def run_manager_agent(query: str) -> AgentResponse:
 
     # ── Step 1: Category extraction ──────────────────────────────────────────
     try:
-        category_result = run_category_search_agent(query)
+        category_result = run_category_search_agent(query) # ty: ignore[invalid-argument-type]  # T03-S15: langsmith 0.1.x ParamSpec; remove after upgrade
     except Exception as exc:
         logger.exception("ManagerAgent: CategorySearchAgent failed")
         return AgentResponse(
@@ -109,8 +109,8 @@ def run_manager_agent(query: str) -> AgentResponse:
     # ── Step 2: Semantic news search ─────────────────────────────────────────
     try:
         search_result = run_news_search_agent(
-            query=query,
-            category_result=category_result,
+            query=query, # ty: ignore[invalid-argument-type]  # T03-S15: langsmith 0.1.x ParamSpec; remove after upgrade
+            category_result=category_result, # ty: ignore[invalid-argument-type]  # T03-S15: langsmith 0.1.x ParamSpec; remove after upgrade
         )
     except Exception as exc:
         logger.exception("ManagerAgent: NewsSearchAgent failed")
@@ -136,7 +136,7 @@ def run_manager_agent(query: str) -> AgentResponse:
 
     # ── Step 3: Summarization ────────────────────────────────────────────────
     try:
-        summary = run_summary_agent(search_result)
+        summary = run_summary_agent(search_result) # ty: ignore[invalid-argument-type]  # T03-S15: langsmith 0.1.x ParamSpec; remove after upgrade
     except Exception as exc:
         logger.exception("ManagerAgent: SummaryAgent failed")
         return AgentResponse(

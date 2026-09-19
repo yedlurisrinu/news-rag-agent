@@ -2,7 +2,6 @@
 conftest.py — pytest fixtures shared across all test modules.
 
 Provides:
-  - Stub for py_commons_per so tests run without the private wheel installed.
   - Common ArticleHit / CategorySearchResult / NewsSearchResult builders.
   - A reusable mock Elasticsearch client.
 """
@@ -14,31 +13,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-
-# ---------------------------------------------------------------------------
-# Stub the private wheel (py_commons_per) before any app module is imported
-# ---------------------------------------------------------------------------
-
-def _make_py_commons_stub() -> None:
-    """Insert a minimal stub so imports of py_commons_per don't fail."""
-    pkg = types.ModuleType("py_commons_per")
-    pkg.logging_setup = types.ModuleType("py_commons_per.logging_setup")
-    pkg.logging_setup.setup_logging = MagicMock()
-    pkg.vault_secret_loader = types.ModuleType("py_commons_per.vault_secret_loader")
-    pkg.vault_secret_loader.load_secrets = MagicMock()
-
-    sys.modules["py_commons_per"] = pkg
-    sys.modules["py_commons_per.logging_setup"] = pkg.logging_setup
-    sys.modules["py_commons_per.vault_secret_loader"] = pkg.vault_secret_loader
-
-
-_make_py_commons_stub()
-
-
 # Note: langsmith IS installed in the venv (langsmith==0.1.120) so no stub is
 # needed.  The @traceable decorator will be a no-op in tests because
 # LANGCHAIN_TRACING_V2 is not set in the test environment.
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
