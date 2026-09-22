@@ -4,6 +4,7 @@
 @Time: 11:48 AM
 @File: base.py
 """
+
 from __future__ import annotations
 
 """
@@ -22,6 +23,7 @@ from elasticsearch import Elasticsearch
 # ---------------------------------------------------------------------------
 # Elasticsearch client
 # ---------------------------------------------------------------------------
+
 
 @lru_cache(maxsize=1)
 def get_es_client() -> Elasticsearch:
@@ -42,14 +44,17 @@ def get_es_client() -> Elasticsearch:
             "Check that Vault secrets loaded correctly."
         )
 
-    return Elasticsearch(cloud_url,
-        api_key = api_key,
-        request_timeout = int(config['request_timeout']),
-        retry_on_timeout = bool(config['retry_on_timeout']),
-        max_retries = int(config['max_retries']),
-        http_compress = bool(config['http_compress']),
+    return Elasticsearch(
+        cloud_url,
+        api_key=api_key,
+        request_timeout=int(config["request_timeout"]),
+        retry_on_timeout=bool(config["retry_on_timeout"]),
+        max_retries=int(config["max_retries"]),
+        http_compress=bool(config["http_compress"]),
         # Connection pooling for cloud,
-        connections_per_node = int(config['connections_per_node']))
+        connections_per_node=int(config["connections_per_node"]),
+    )
+
 
 # ---------------------------------------------------------------------------
 # Shared constants
@@ -62,9 +67,11 @@ INFERENCE_ID = "news-embedding-endpoint"
 # Data models passed between agents
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class ArticleHit:
     """A single retrieved news article."""
+
     article_id: str
     title: str
     content: str
@@ -77,14 +84,16 @@ class ArticleHit:
 @dataclass
 class CategorySearchResult:
     """Output of news_category_search_agent."""
+
     categories: list[str]
-    fetch_latest: bool          # True when user wants newest articles in those categories
+    fetch_latest: bool  # True when user wants newest articles in those categories
     is_news_query: bool = True  # False when the query is not news-related
 
 
 @dataclass
 class NewsSearchResult:
     """Output of news_search_agent."""
+
     articles: list[ArticleHit]
     query_used: str
 
@@ -92,9 +101,10 @@ class NewsSearchResult:
 @dataclass
 class AgentResponse:
     """Final structured response returned by manager_agent to the API."""
+
     query: str
     categories: list[str]
     summary: str
-    articles: list[dict]        # serializable form of ArticleHit
+    articles: list[dict]  # serializable form of ArticleHit
     duration_seconds: float
     error: str | None = None

@@ -20,22 +20,8 @@ ENV UV_COMPILE_BYTECODE=1 \
 COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project
 
-# # Install dependencies first (layer caching)
-# COPY requirements.txt .
-# RUN pip install --no-cache-dir --upgrade pip \
-#     && pip install --no-cache-dir -r requirements.txt
-
-# # Always fresh — local packages
-# COPY requirements_locales.txt .
-# RUN pip install --no-cache-dir -r requirements_locales.txt
-
 # ── Stage 2: Runtime ──────────────────────────────────────
 FROM python:3.12-slim AS runtime
-
-# Copy installed packages from builder
-# COPY --from=builder /usr/local/lib/python3.12/site-packages \
-#                     /usr/local/lib/python3.12/site-packages
-# COPY --from=builder /usr/local/bin /usr/local/bin
 
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv

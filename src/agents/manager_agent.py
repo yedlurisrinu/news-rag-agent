@@ -4,6 +4,7 @@
 @Time: 11:56 AM
 @File: manager_agent.py
 """
+
 from __future__ import annotations
 
 """
@@ -83,7 +84,7 @@ def run_manager_agent(query: str) -> AgentResponse:
 
     # ── Step 1: Category extraction ──────────────────────────────────────────
     try:
-        category_result = run_category_search_agent(query) # ty: ignore[invalid-argument-type]  # T03-S15: langsmith 0.1.x ParamSpec; remove after upgrade
+        category_result = run_category_search_agent(query)  # ty: ignore[invalid-argument-type]  # T03-S15: langsmith 0.1.x ParamSpec; remove after upgrade
     except Exception as exc:
         logger.exception("ManagerAgent: CategorySearchAgent failed")
         return AgentResponse(
@@ -97,7 +98,9 @@ def run_manager_agent(query: str) -> AgentResponse:
 
     # ── Guard rail 1: Reject off-topic queries ────────────────────────────────
     if not category_result.is_news_query:
-        logger.info("ManagerAgent: query is not news-related — returning polite refusal.")
+        logger.info(
+            "ManagerAgent: query is not news-related — returning polite refusal."
+        )
         return AgentResponse(
             query=query,
             categories=[],
@@ -109,8 +112,8 @@ def run_manager_agent(query: str) -> AgentResponse:
     # ── Step 2: Semantic news search ─────────────────────────────────────────
     try:
         search_result = run_news_search_agent(
-            query=query, # ty: ignore[invalid-argument-type]  # T03-S15: langsmith 0.1.x ParamSpec; remove after upgrade
-            category_result=category_result, # ty: ignore[invalid-argument-type]  # T03-S15: langsmith 0.1.x ParamSpec; remove after upgrade
+            query=query,  # ty: ignore[invalid-argument-type]  # T03-S15: langsmith 0.1.x ParamSpec; remove after upgrade
+            category_result=category_result,  # ty: ignore[invalid-argument-type]  # T03-S15: langsmith 0.1.x ParamSpec; remove after upgrade
         )
     except Exception as exc:
         logger.exception("ManagerAgent: NewsSearchAgent failed")
@@ -125,7 +128,9 @@ def run_manager_agent(query: str) -> AgentResponse:
 
     # ── Guard rail 2: No articles found ──────────────────────────────────────
     if not search_result.articles:
-        logger.info("ManagerAgent: no articles found — returning polite no-results reply.")
+        logger.info(
+            "ManagerAgent: no articles found — returning polite no-results reply."
+        )
         return AgentResponse(
             query=query,
             categories=category_result.categories,
@@ -136,7 +141,7 @@ def run_manager_agent(query: str) -> AgentResponse:
 
     # ── Step 3: Summarization ────────────────────────────────────────────────
     try:
-        summary = run_summary_agent(search_result) # ty: ignore[invalid-argument-type]  # T03-S15: langsmith 0.1.x ParamSpec; remove after upgrade
+        summary = run_summary_agent(search_result)  # ty: ignore[invalid-argument-type]  # T03-S15: langsmith 0.1.x ParamSpec; remove after upgrade
     except Exception as exc:
         logger.exception("ManagerAgent: SummaryAgent failed")
         return AgentResponse(

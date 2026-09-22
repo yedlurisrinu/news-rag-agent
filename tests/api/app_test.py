@@ -12,6 +12,7 @@ Endpoints tested:
   GET  /ready     — readiness probe (ES ping)
   POST /query     — full multi-agent pipeline
 """
+
 from __future__ import annotations
 
 import os
@@ -34,6 +35,7 @@ CHAT_HTML = STATIC_DIR / "chat-ui.html"
 # Fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture(scope="module")
 def test_client():
     """
@@ -52,6 +54,7 @@ def test_client():
 def mock_agent_response():
     """Return a fully populated AgentResponse."""
     from agents.base import AgentResponse
+
     return AgentResponse(
         query="What is happening in AI?",
         categories=["technology", "ai"],
@@ -73,6 +76,7 @@ def mock_agent_response():
 # GET /health
 # ---------------------------------------------------------------------------
 
+
 class TestHealthEndpoint:
     def test_returns_200(self, test_client):
         resp = test_client.get("/health")
@@ -86,6 +90,7 @@ class TestHealthEndpoint:
 # ---------------------------------------------------------------------------
 # GET /ready
 # ---------------------------------------------------------------------------
+
 
 class TestReadyEndpoint:
     def test_returns_200_when_es_ping_succeeds(self, test_client, mock_es_client):
@@ -126,23 +131,30 @@ class TestReadyEndpoint:
 # POST /query
 # ---------------------------------------------------------------------------
 
+
 class TestQueryEndpoint:
     def test_valid_query_returns_200(self, test_client, mock_agent_response):
         with patch("api.app.run_manager_agent", return_value=mock_agent_response):
-            resp = test_client.post("/query", json={"query": "What is happening in AI?"})
+            resp = test_client.post(
+                "/query", json={"query": "What is happening in AI?"}
+            )
 
         assert resp.status_code == 200
 
     def test_response_contains_query(self, test_client, mock_agent_response):
         with patch("api.app.run_manager_agent", return_value=mock_agent_response):
-            resp = test_client.post("/query", json={"query": "What is happening in AI?"})
+            resp = test_client.post(
+                "/query", json={"query": "What is happening in AI?"}
+            )
 
         data = resp.json()
         assert data["query"] == "What is happening in AI?"
 
     def test_response_contains_categories(self, test_client, mock_agent_response):
         with patch("api.app.run_manager_agent", return_value=mock_agent_response):
-            resp = test_client.post("/query", json={"query": "What is happening in AI?"})
+            resp = test_client.post(
+                "/query", json={"query": "What is happening in AI?"}
+            )
 
         data = resp.json()
         assert "technology" in data["categories"]
@@ -185,6 +197,7 @@ class TestQueryEndpoint:
 
     def test_agent_error_returns_500(self, test_client):
         from agents.base import AgentResponse
+
         error_response = AgentResponse(
             query="test",
             categories=[],
@@ -200,6 +213,7 @@ class TestQueryEndpoint:
 
     def test_agent_error_detail_in_response(self, test_client):
         from agents.base import AgentResponse
+
         error_response = AgentResponse(
             query="test",
             categories=[],
@@ -214,7 +228,9 @@ class TestQueryEndpoint:
         assert "NewsSearchAgent failed" in resp.json()["detail"]
 
     def test_manager_agent_called_with_query(self, test_client, mock_agent_response):
-        with patch("api.app.run_manager_agent", return_value=mock_agent_response) as mock_fn:
+        with patch(
+            "api.app.run_manager_agent", return_value=mock_agent_response
+        ) as mock_fn:
             test_client.post("/query", json={"query": "latest AI developments"})
 
         mock_fn.assert_called_once_with("latest AI developments")
@@ -231,6 +247,7 @@ class TestQueryEndpoint:
 # ---------------------------------------------------------------------------
 # GET / — serve chat UI
 # ---------------------------------------------------------------------------
+
 
 class TestServeUi:
     def test_root_returns_200_when_file_exists(self, test_client):
@@ -250,20 +267,24 @@ class TestServeUi:
 # Schema validation — QueryRequest / QueryResponse
 # ---------------------------------------------------------------------------
 
+
 class TestQuerySchemas:
     def test_query_request_min_length_enforced(self):
         from pydantic import ValidationError
         from api.app import QueryRequest
+
         with pytest.raises(ValidationError):
             QueryRequest(query="ab")  # only 2 chars, min is 3
 
     def test_query_request_accepts_three_chars(self):
         from api.app import QueryRequest
+
         req = QueryRequest(query="abc")
         assert req.query == "abc"
 
     def test_article_out_schema_fields(self):
         from api.app import ArticleOut
+
         art = ArticleOut(
             title="Test",
             link="https://example.com",

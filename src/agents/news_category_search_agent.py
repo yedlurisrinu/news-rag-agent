@@ -4,6 +4,7 @@
 @Time: 11:51 AM
 @File: news_category_search_agent.py
 """
+
 from __future__ import annotations
 
 """
@@ -37,6 +38,7 @@ logger = logging.getLogger(__name__)
 # Pydantic schema for structured LLM output
 # ---------------------------------------------------------------------------
 
+
 class CategoryIntent(BaseModel):
     categories: list[str] = Field(
         description=(
@@ -66,10 +68,11 @@ class CategoryIntent(BaseModel):
 # LLM chain — extract intent from the query
 # ---------------------------------------------------------------------------
 
-_CATEGORY_PROMPT = ChatPromptTemplate.from_messages([
-    (
-        "system",
-        """You are a news query analyser. Given a user query, extract:
+_CATEGORY_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """You are a news query analyser. Given a user query, extract:
 1. `is_news_query`: true if the query is about news, current events, or any topic
    that could appear in a news feed (politics, technology, sports, business, science,
    health, climate, finance, entertainment, world affairs, etc.).
@@ -85,12 +88,14 @@ _CATEGORY_PROMPT = ChatPromptTemplate.from_messages([
 
 Respond ONLY with valid JSON matching this schema:
 {{"is_news_query": true/false, "categories": ["..."], "fetch_latest": true/false}}""",
-    ),
-    ("human", "{query}"),
-])
+        ),
+        ("human", "{query}"),
+    ]
+)
 
 
 def _build_intent_chain():
+
     llm = ChatOpenAI(
         model="gpt-4o-mini",
         temperature=0,
@@ -102,6 +107,7 @@ def _build_intent_chain():
 # ---------------------------------------------------------------------------
 # Elasticsearch — verify which categories actually have documents
 # ---------------------------------------------------------------------------
+
 
 def _resolve_categories_in_es(categories: list[str]) -> list[str]:
     """
@@ -118,9 +124,7 @@ def _resolve_categories_in_es(categories: list[str]) -> list[str]:
                 "size": 0,
                 "query": {
                     "bool": {
-                        "should": [
-                            {"match": {"title": cat}} for cat in categories
-                        ],
+                        "should": [{"match": {"title": cat}} for cat in categories],
                         "minimum_should_match": 1,
                     }
                 },
@@ -152,6 +156,7 @@ def _resolve_categories_in_es(categories: list[str]) -> list[str]:
 # Public entry point
 # ---------------------------------------------------------------------------
 
+
 @traceable(name="NewsCategorySearchAgent")
 def run_category_search_agent(query: str) -> CategorySearchResult:
     """
@@ -174,7 +179,9 @@ def run_category_search_agent(query: str) -> CategorySearchResult:
     fetch_latest: bool = intent.get("fetch_latest", False)
 
     if not is_news_query:
-        logger.info("CategorySearchAgent: query is not news-related — skipping ES check.")
+        logger.info(
+            "CategorySearchAgent: query is not news-related — skipping ES check."
+        )
         return CategorySearchResult(
             categories=[], fetch_latest=False, is_news_query=False
         )
@@ -187,7 +194,9 @@ def run_category_search_agent(query: str) -> CategorySearchResult:
 
     logger.info(
         "CategorySearchAgent: categories=%s fetch_latest=%s is_news_query=%s",
-        verified, fetch_latest, is_news_query,
+        verified,
+        fetch_latest,
+        is_news_query,
     )
     return CategorySearchResult(
         categories=verified, fetch_latest=fetch_latest, is_news_query=True
