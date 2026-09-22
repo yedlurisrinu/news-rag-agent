@@ -29,7 +29,7 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 # Copy source code and static files
 COPY src/ ./src/
-COPY . .
+# COPY . . not needed as src amd static is already covering
 COPY static/ ./static/
 
 # Set PYTHONPATH so imports resolve cleanly

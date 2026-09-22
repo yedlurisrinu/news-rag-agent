@@ -14,7 +14,16 @@ _NO_NEWS_FOUND_REPLY = (
     "I searched for news articles matching your query but couldn't find any relevant results. "
     "Try broadening your search terms or asking about a different topic."
 )
+class NewsInput(TypedDict):
+    query: str
 
+class NewsOutput(TypedDict):
+    summary: str
+    
+class SearchTask(TypedDict):
+    query: str
+    category: str
+    
 class ArticleRef(TypedDict):
     article_id: Required[str]
     score: Required[float]
@@ -55,7 +64,7 @@ class NewsState(TypedDict):
 
 class CategoryOutput(TypedDict):
     categories: list[str] 
-    is_news_query: NotRequired[bool]
+    is_news_query: bool
 
 class SearchOutput(TypedDict):
     articles: Required[list[ArticleRef]]
@@ -73,17 +82,24 @@ def classify(state: NewsState) -> CategoryOutput:
 
 def fan_out(state: NewsState) -> list[Send]:
     return [Send("search", {"query": state["query"], "category": c}) for c in state["categories"]]
-
-def search(state: NewsState) -> SearchOutput:
+# LangGraph's node protocol names it that, and ty matches on the name
+# that is the reson we are keeping name
+def search(state: SearchTask) -> SearchOutput:
     # TODO  search_result = run_news_search_agent(state["query"], state['categories']) 
     # search_result = [{"article_id":"124", "score": 5.2}, {"article_id":"345", "score": 4.3}]; # some articles
-    return {"articles":[{"article_id":"124", "score": 5.2}, {"article_id":"345", "score": 4.3}]}
+    print("************",state["category"])
+    if state["category"] == "FINANCE":
+        return {"articles":[]}
+    if state["query"] == "GPU":
+        return {"articles":[{"article_id":"124", "score": 5.2}, {"article_id":"345", "score": 4.3}]}
+    else:
+        return {"articles":[]}
 
 def summarize(state: NewsState) -> SummaryOutput:
     # LLM call for summrization
     # TODO summary = run_summary_agent(state["query"], state["articles"])
     summary = "All Good"
-    return {"summary": summary}
+    return {"summary": summary, "dummy": "test"}
 def gate(state: NewsState) -> dict:
     return {}
 def reply_off_topic(state: NewsState) -> SummaryOutput:
@@ -102,7 +118,7 @@ def route_after_search(state: NewsState) -> Literal["found", "empty"]:
 
 def build():
     
-    g = StateGraph(NewsState)  # ty: ignore[invalid-argument-type]
+    g = StateGraph(NewsState, input_schema=NewsInput, output_schema=NewsOutput)  # ty: ignore[invalid-argument-type]
     for name, fn in [("classify", classify), ("search", search), ("summarize", summarize),
                      ("reply_off_topic", reply_off_topic), ("reply_no_results", reply_no_results), ("fan_out",fan_out)]:
         g.add_node(name, fn)
@@ -120,5 +136,13 @@ def build():
     return g.compile()
 
 if __name__ == "__main__":
-    out = build().invoke({"query": "GPU"})
-    print(out['summary'])
+    # Move the config to /query route api level 
+    # where we build the config, not when calling invoke
+    # this is only for local call
+    out1 = build().invoke({"query": "GPU"}, {"recursion_limit": 10})
+    out2 = build().invoke({"query": "Not News"}, {"recursion_limit": 10})
+    out3 = build().invoke({"query": "Obscure"}, {"recursion_limit": 10})
+    print(out1['summary'])
+    print(out2['summary'])
+    print(out3['summary'])
+    # print(out3['dummy'])

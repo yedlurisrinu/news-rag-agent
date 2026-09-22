@@ -14,7 +14,7 @@ import pytest
 from langgraph.channels.binop import BinaryOperatorAggregate
 from langgraph.graph import START, StateGraph
 
-from graph.state import (
+from graph.graph import (
     ArticleRef,
     CategoryOutput,
     NewsState,
