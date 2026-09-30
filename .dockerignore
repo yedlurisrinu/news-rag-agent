@@ -18,4 +18,4 @@ README.md
 .github/
 pytest.ini
 README.md*
-src/thread*
+src/learning/thread*

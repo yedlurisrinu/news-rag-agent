@@ -5,6 +5,7 @@ Unit tests for graph/state.py:
   - merge_article_hits — the four reducer-contract properties + behaviour
   - NewsState wiring    — reducer registered, output TypedDicts match state keys
 """
+
 from __future__ import annotations
 
 import copy
@@ -64,7 +65,9 @@ class TestEmptyStart:
 class TestOrderIndependent:
     @pytest.mark.parametrize(("current", "update"), PAIRS)
     def test_swapping_arguments_gives_same_result(self, current, update):
-        assert merge_article_hits(current, update) == merge_article_hits(update, current)
+        assert merge_article_hits(current, update) == merge_article_hits(
+            update, current
+        )
 
     def test_write_order_of_three_parallel_updates_does_not_matter(self):
         c = [ref("id_4", 0.8), ref("id_2", 0.95)]
@@ -113,10 +116,14 @@ class TestBehaviour:
         assert merge_article_hits(A, B) == EXPECTED_A_B
 
     def test_higher_incoming_score_replaces(self):
-        assert merge_article_hits([ref("id_1", 0.7)], [ref("id_1", 0.8)]) == [ref("id_1", 0.8)]
+        assert merge_article_hits([ref("id_1", 0.7)], [ref("id_1", 0.8)]) == [
+            ref("id_1", 0.8)
+        ]
 
     def test_lower_incoming_score_is_ignored(self):
-        assert merge_article_hits([ref("id_1", 0.8)], [ref("id_1", 0.7)]) == [ref("id_1", 0.8)]
+        assert merge_article_hits([ref("id_1", 0.8)], [ref("id_1", 0.7)]) == [
+            ref("id_1", 0.8)
+        ]
 
     def test_duplicate_ids_within_one_update_keep_max(self):
         update = [ref("id_1", 0.3), ref("id_1", 0.9), ref("id_1", 0.6)]
@@ -128,8 +135,18 @@ class TestBehaviour:
 
     def test_sorted_by_score_desc_then_id_asc(self):
         # your self-check from the sorting discussion: id_0 and id_1 tie at 0.8
-        update = [ref("id_1", 0.8), ref("id_2", 0.9), ref("id_3", 0.5), ref("id_0", 0.8)]
-        assert [r["article_id"] for r in merge_article_hits([], update)] == ["id_2", "id_0", "id_1", "id_3"]
+        update = [
+            ref("id_1", 0.8),
+            ref("id_2", 0.9),
+            ref("id_3", 0.5),
+            ref("id_0", 0.8),
+        ]
+        assert [r["article_id"] for r in merge_article_hits([], update)] == [
+            "id_2",
+            "id_0",
+            "id_1",
+            "id_3",
+        ]
 
 
 # ------------------------------------------------------------------- state wiring
@@ -165,8 +182,12 @@ class TestNewsStateWiring:
         out = g.compile().invoke({"query": "q", ARTICLES_KEY: []})
         assert out[ARTICLES_KEY] == EXPECTED_A_B
 
-    @pytest.mark.parametrize("output_type", [CategoryOutput, SearchOutput, SummaryOutput])
+    @pytest.mark.parametrize(
+        "output_type", [CategoryOutput, SearchOutput, SummaryOutput]
+    )
     def test_output_keys_are_state_keys(self, output_type):
         # a node returning a key NewsState doesn't declare is silently dropped (S46)
         missing = set(output_type.__annotations__) - set(NewsState.__annotations__)
-        assert not missing, f"{output_type.__name__} writes keys NewsState lacks: {missing}"
+        assert not missing, (
+            f"{output_type.__name__} writes keys NewsState lacks: {missing}"
+        )

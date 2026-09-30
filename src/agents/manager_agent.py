@@ -84,7 +84,10 @@ def run_manager_agent(query: str) -> AgentResponse:
 
     # ── Step 1: Category extraction ──────────────────────────────────────────
     try:
-        category_result = run_category_search_agent(query)  # ty: ignore[invalid-argument-type]  # T03-S15: langsmith 0.1.x ParamSpec; remove after upgrade
+        category_result = run_category_search_agent(query)   # ty: ignore[invalid-argument-type]
+# ty cannot expand the ParamSpec in langsmith's SupportsLangsmithExtra.__call__
+# (run_helpers.py:374, which carries its own `type: ignore[valid-type]`).
+# Reproduced on langsmith 0.14.0 / ty 0.0.84. Not a version issue - recheck on ty upgrades.
     except Exception as exc:
         logger.exception("ManagerAgent: CategorySearchAgent failed")
         return AgentResponse(
@@ -110,10 +113,13 @@ def run_manager_agent(query: str) -> AgentResponse:
         )
 
     # ── Step 2: Semantic news search ─────────────────────────────────────────
+    # ty cannot expand the ParamSpec in langsmith's SupportsLangsmithExtra.__call__
+    # (run_helpers.py:374, which carries its own `type: ignore[valid-type]`).
+    # Reproduced on langsmith 0.14.0 / ty 0.0.84. Not a version issue - recheck on ty upgrades.
     try:
         search_result = run_news_search_agent(
-            query=query,  # ty: ignore[invalid-argument-type]  # T03-S15: langsmith 0.1.x ParamSpec; remove after upgrade
-            category_result=category_result,  # ty: ignore[invalid-argument-type]  # T03-S15: langsmith 0.1.x ParamSpec; remove after upgrade
+            query=query,  # ty: ignore[invalid-argument-type]
+            category_result=category_result,  # ty: ignore[invalid-argument-type]
         )
     except Exception as exc:
         logger.exception("ManagerAgent: NewsSearchAgent failed")
@@ -140,8 +146,11 @@ def run_manager_agent(query: str) -> AgentResponse:
         )
 
     # ── Step 3: Summarization ────────────────────────────────────────────────
+    # ty cannot expand the ParamSpec in langsmith's SupportsLangsmithExtra.__call__
+    # (run_helpers.py:374, which carries its own `type: ignore[valid-type]`).
+    # Reproduced on langsmith 0.14.0 / ty 0.0.84. Not a version issue - recheck on ty upgrades.
     try:
-        summary = run_summary_agent(search_result)  # ty: ignore[invalid-argument-type]  # T03-S15: langsmith 0.1.x ParamSpec; remove after upgrade
+        summary = run_summary_agent(search_result)  # ty: ignore[invalid-argument-type]
     except Exception as exc:
         logger.exception("ManagerAgent: SummaryAgent failed")
         return AgentResponse(
