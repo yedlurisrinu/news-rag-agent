@@ -4,6 +4,7 @@
 @Time: 11:55 AM
 @File: news_summary_agent.py
 """
+
 from __future__ import annotations
 
 """
@@ -28,10 +29,11 @@ from agents.base import NewsSearchResult
 
 logger = logging.getLogger(__name__)
 
-_SUMMARY_PROMPT = ChatPromptTemplate.from_messages([
-    (
-        "system",
-        """You are an expert news analyst. You will receive a user query and a
+_SUMMARY_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            """You are an expert news analyst. You will receive a user query and a
 collection of news article snippets retrieved from a search engine.
 
 Your task:
@@ -47,18 +49,19 @@ Strict grounding rules — you MUST follow these without exception:
 - Do NOT speculate, infer, or fill in gaps beyond what the articles state.
 - If the provided articles do not contain enough information to answer the query,
   say so explicitly: state what was found and what remains unanswered.""",
-    ),
-    (
-        "human",
-        """USER QUERY:
+        ),
+        (
+            "human",
+            """USER QUERY:
 {query}
 
 RETRIEVED ARTICLES:
 {context}
 
 Write the summary:""",
-    ),
-])
+        ),
+    ]
+)
 
 
 def _build_context(search_result: NewsSearchResult) -> str:
@@ -73,7 +76,7 @@ def _build_context(search_result: NewsSearchResult) -> str:
             f"[{i}] {article.title}\n"
             f"Source: {article.source}  |  Published: {pub}\n"
             f"Link: {article.link}\n"
-            f"{article.content[:800]}"   # cap per-article content to keep prompt focused
+            f"{article.content[:800]}"  # cap per-article content to keep prompt focused
         )
     return "\n\n---\n\n".join(blocks)
 
@@ -90,6 +93,7 @@ def _build_chain():
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
+
 
 @traceable(name="NewsSummaryAgent")
 def run_summary_agent(search_result: NewsSearchResult) -> str:
@@ -117,10 +121,12 @@ def run_summary_agent(search_result: NewsSearchResult) -> str:
 
     context = _build_context(search_result)
     chain = _build_chain()
-    summary: str = chain.invoke({
-        "query": search_result.query_used,
-        "context": context,
-    })
+    summary: str = chain.invoke(
+        {
+            "query": search_result.query_used,
+            "context": context,
+        }
+    )
 
     logger.info("SummaryAgent: produced %d-char summary", len(summary))
     return summary

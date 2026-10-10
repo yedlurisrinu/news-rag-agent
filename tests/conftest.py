@@ -5,6 +5,7 @@ Provides:
   - Common ArticleHit / CategorySearchResult / NewsSearchResult builders.
   - A reusable mock Elasticsearch client.
 """
+
 from __future__ import annotations
 
 import sys
@@ -21,10 +22,12 @@ import pytest
 # Shared fixtures
 # ---------------------------------------------------------------------------
 
+
 @pytest.fixture()
 def sample_article_hit():
     """Return a single populated ArticleHit."""
     from agents.base import ArticleHit
+
     return ArticleHit(
         article_id="abc-123",
         title="AI Revolutionises Healthcare",
@@ -40,6 +43,7 @@ def sample_article_hit():
 def sample_articles(sample_article_hit):
     """Return a small list of ArticleHit objects."""
     from agents.base import ArticleHit
+
     second = ArticleHit(
         article_id="def-456",
         title="Global Markets Rally on Trade News",
@@ -56,6 +60,7 @@ def sample_articles(sample_article_hit):
 def category_result():
     """Return a CategorySearchResult for technology topics."""
     from agents.base import CategorySearchResult
+
     return CategorySearchResult(
         categories=["technology", "ai"], fetch_latest=False, is_news_query=True
     )
@@ -65,6 +70,7 @@ def category_result():
 def category_result_latest():
     """Return a CategorySearchResult with fetch_latest=True."""
     from agents.base import CategorySearchResult
+
     return CategorySearchResult(
         categories=["technology"], fetch_latest=True, is_news_query=True
     )
@@ -74,15 +80,15 @@ def category_result_latest():
 def off_topic_category_result():
     """Return a CategorySearchResult flagged as non-news."""
     from agents.base import CategorySearchResult
-    return CategorySearchResult(
-        categories=[], fetch_latest=False, is_news_query=False
-    )
+
+    return CategorySearchResult(categories=[], fetch_latest=False, is_news_query=False)
 
 
 @pytest.fixture()
 def news_search_result(sample_articles):
     """Return a NewsSearchResult wrapping sample_articles."""
     from agents.base import NewsSearchResult
+
     return NewsSearchResult(articles=sample_articles, query_used="latest AI news")
 
 
@@ -90,6 +96,7 @@ def news_search_result(sample_articles):
 def empty_search_result():
     """Return a NewsSearchResult with no articles."""
     from agents.base import NewsSearchResult
+
     return NewsSearchResult(articles=[], query_used="obscure topic")
 
 
@@ -109,16 +116,18 @@ def es_search_response(sample_articles):
     """
     hits = []
     for art in sample_articles:
-        hits.append({
-            "_id": art.article_id,
-            "_score": art.score,
-            "_source": {
-                "article_id": art.article_id,
-                "title": art.title,
-                "content": art.content,
-                "source": art.source,
-                "published_at": art.published_at,
-                "link": art.link,
-            },
-        })
+        hits.append(
+            {
+                "_id": art.article_id,
+                "_score": art.score,
+                "_source": {
+                    "article_id": art.article_id,
+                    "title": art.title,
+                    "content": art.content,
+                    "source": art.source,
+                    "published_at": art.published_at,
+                    "link": art.link,
+                },
+            }
+        )
     return {"hits": {"total": {"value": len(hits)}, "hits": hits}}

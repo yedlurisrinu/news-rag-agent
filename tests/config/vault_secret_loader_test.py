@@ -2,14 +2,15 @@ import os
 import pytest
 from unittest.mock import MagicMock, patch
 
-class TestLoadSecrets:
 
+class TestLoadSecrets:
     def test_raises_when_vault_addr_missing(self, monkeypatch):
         monkeypatch.delenv("VAULT_ADDR", raising=False)
         monkeypatch.setenv("VAULT_TOKEN", "token")
         monkeypatch.setenv("VAULT_SECRET_PATH", "secret/myapp")
 
         from config.vault_secrets import load_secrets
+
         with pytest.raises(ValueError, match="VAULT_ADDR and VAULT_TOKEN must be set"):
             load_secrets()
 
@@ -19,6 +20,7 @@ class TestLoadSecrets:
         monkeypatch.setenv("VAULT_SECRET_PATH", "secret/myapp")
 
         from config.vault_secrets import load_secrets
+
         with pytest.raises(ValueError, match="VAULT_ADDR and VAULT_TOKEN must be set"):
             load_secrets()
 
@@ -28,6 +30,7 @@ class TestLoadSecrets:
         monkeypatch.delenv("VAULT_SECRET_PATH", raising=False)
 
         from config.vault_secrets import load_secrets
+
         with pytest.raises(ValueError, match="VAULT_SECRET_PATH must be set"):
             load_secrets()
 
@@ -42,6 +45,7 @@ class TestLoadSecrets:
         mock_client_cls.return_value = mock_client
 
         from config.vault_secrets import load_secrets
+
         with pytest.raises(ValueError, match="Vault authentication failed"):
             load_secrets()
 
@@ -59,6 +63,7 @@ class TestLoadSecrets:
         mock_client_cls.return_value = mock_client
 
         from config.vault_secrets import load_secrets
+
         load_secrets()
 
         assert os.environ["DB_HOST"] == "localhost"
@@ -82,6 +87,7 @@ class TestLoadSecrets:
         mock_client_cls.return_value = mock_client
 
         from config.vault_secrets import load_secrets
+
         load_secrets()
 
         assert os.environ["APP_KEY"] == "abc"
@@ -102,6 +108,7 @@ class TestLoadSecrets:
         mock_client_cls.return_value = mock_client
 
         from config.vault_secrets import load_secrets
+
         load_secrets()
 
         mock_client.secrets.kv.v2.read_secret_version.assert_called_once_with(
@@ -116,11 +123,16 @@ class TestLoadSecrets:
 
         mock_client = MagicMock()
         mock_client.is_authenticated.return_value = True
-        mock_client.secrets.kv.v2.read_secret_version.side_effect = Exception("connection refused")
+        mock_client.secrets.kv.v2.read_secret_version.side_effect = Exception(
+            "connection refused"
+        )
         mock_client_cls.return_value = mock_client
 
         from config.vault_secrets import load_secrets
-        with pytest.raises(ValueError, match="Exception while reading secrets from vault"):
+
+        with pytest.raises(
+            ValueError, match="Exception while reading secrets from vault"
+        ):
             load_secrets()
 
     @patch("config.vault_secrets.Client")
@@ -137,6 +149,7 @@ class TestLoadSecrets:
         mock_client_cls.return_value = mock_client
 
         from config.vault_secrets import load_secrets
+
         load_secrets()
 
         mock_client_cls.assert_called_once_with(

@@ -5,6 +5,7 @@ Unit tests for agents/news_summary_agent.py:
   - _build_context()    — article formatting, truncation at 800 chars, empty case
   - run_summary_agent() — happy path, no-articles path, LLM exception
 """
+
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
@@ -18,15 +19,18 @@ import agents.news_summary_agent  # noqa: F401 — needed for patch() target res
 # _build_context
 # ---------------------------------------------------------------------------
 
+
 class TestBuildContext:
     def test_returns_no_articles_message_when_empty(self, empty_search_result):
         from agents.news_summary_agent import _build_context
+
         ctx = _build_context(empty_search_result)
         assert "No articles were retrieved" in ctx
 
     def test_single_article_formatted_correctly(self, sample_article_hit):
         from agents.base import NewsSearchResult
         from agents.news_summary_agent import _build_context
+
         result = NewsSearchResult(articles=[sample_article_hit], query_used="AI")
         ctx = _build_context(result)
 
@@ -36,11 +40,13 @@ class TestBuildContext:
 
     def test_multiple_articles_separated_by_divider(self, news_search_result):
         from agents.news_summary_agent import _build_context
+
         ctx = _build_context(news_search_result)
         assert "---" in ctx
 
     def test_article_numbering_starts_at_one(self, news_search_result):
         from agents.news_summary_agent import _build_context
+
         ctx = _build_context(news_search_result)
         assert "[1]" in ctx
         assert "[2]" in ctx
@@ -68,6 +74,7 @@ class TestBuildContext:
     def test_published_at_truncated_to_date(self, sample_article_hit):
         from agents.base import NewsSearchResult
         from agents.news_summary_agent import _build_context
+
         result = NewsSearchResult(articles=[sample_article_hit], query_used="AI")
         ctx = _build_context(result)
 
@@ -96,9 +103,11 @@ class TestBuildContext:
 # run_summary_agent
 # ---------------------------------------------------------------------------
 
+
 class TestRunSummaryAgent:
     def test_returns_no_articles_message_when_empty(self, empty_search_result):
         from agents.news_summary_agent import run_summary_agent
+
         summary = run_summary_agent(empty_search_result)
         assert "No relevant articles" in summary
 
@@ -106,6 +115,7 @@ class TestRunSummaryAgent:
         mock_chain = MagicMock()
         with patch("agents.news_summary_agent._build_chain", return_value=mock_chain):
             from agents.news_summary_agent import run_summary_agent
+
             run_summary_agent(empty_search_result)
         mock_chain.invoke.assert_not_called()
 
@@ -115,6 +125,7 @@ class TestRunSummaryAgent:
 
         with patch("agents.news_summary_agent._build_chain", return_value=mock_chain):
             from agents.news_summary_agent import run_summary_agent
+
             summary = run_summary_agent(news_search_result)
 
         assert summary == "This is the generated summary."
@@ -125,6 +136,7 @@ class TestRunSummaryAgent:
 
         with patch("agents.news_summary_agent._build_chain", return_value=mock_chain):
             from agents.news_summary_agent import run_summary_agent
+
             run_summary_agent(news_search_result)
 
         call_args = mock_chain.invoke.call_args
@@ -145,6 +157,7 @@ class TestRunSummaryAgent:
 
         with patch("agents.news_summary_agent._build_chain", return_value=mock_chain):
             from agents.news_summary_agent import run_summary_agent
+
             run_summary_agent(news_search_result)
 
         for article in news_search_result.articles:
@@ -156,6 +169,7 @@ class TestRunSummaryAgent:
 
         with patch("agents.news_summary_agent._build_chain", return_value=mock_chain):
             from agents.news_summary_agent import run_summary_agent
+
             with pytest.raises(RuntimeError, match="OpenAI rate limit"):
                 run_summary_agent(news_search_result)
 
@@ -165,18 +179,21 @@ class TestRunSummaryAgent:
 
         with patch("agents.news_summary_agent._build_chain", return_value=mock_chain):
             from agents.news_summary_agent import run_summary_agent
+
             summary = run_summary_agent(news_search_result)
 
         assert isinstance(summary, str)
 
     def test_single_article_produces_summary(self, sample_article_hit):
         from agents.base import NewsSearchResult
+
         mock_chain = MagicMock()
         mock_chain.invoke.return_value = "One article summary."
 
         single = NewsSearchResult(articles=[sample_article_hit], query_used="AI health")
         with patch("agents.news_summary_agent._build_chain", return_value=mock_chain):
             from agents.news_summary_agent import run_summary_agent
+
             summary = run_summary_agent(single)
 
         assert summary == "One article summary."
@@ -185,6 +202,7 @@ class TestRunSummaryAgent:
 # ---------------------------------------------------------------------------
 # _build_chain (smoke test — verifies chain construction without live LLM)
 # ---------------------------------------------------------------------------
+
 
 class TestBuildChain:
     def test_build_chain_returns_callable(self, monkeypatch):
@@ -196,6 +214,7 @@ class TestBuildChain:
 
         with patch("agents.news_summary_agent.ChatOpenAI", return_value=fake_llm):
             from agents.news_summary_agent import _build_chain
+
             chain = _build_chain()
 
         assert chain is not None

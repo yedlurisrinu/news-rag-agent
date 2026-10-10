@@ -4,6 +4,7 @@
 @Time: 11:53 AM
 @File: news_search_agent.py
 """
+
 from __future__ import annotations
 
 """
@@ -43,6 +44,7 @@ TOP_K = 8
 # Query builders
 # ---------------------------------------------------------------------------
 
+
 def _semantic_query(query_text: str, categories: list[str]) -> dict:
     """
     Build an ES query that:
@@ -50,8 +52,7 @@ def _semantic_query(query_text: str, categories: list[str]) -> dict:
       - Boosts documents whose title matches any of the extracted categories.
     """
     category_boosts = [
-        {"match": {"title": {"query": cat, "boost": 1.5}}}
-        for cat in categories
+        {"match": {"title": {"query": cat, "boost": 1.5}}} for cat in categories
     ]
 
     return {
@@ -82,9 +83,7 @@ def _latest_semantic_query(query_text: str, categories: list[str]) -> dict:
         "%Y-%m-%dT%H:%M:%SZ"
     )
     base = _semantic_query(query_text, categories)
-    base["query"]["bool"]["filter"] = [
-        {"range": {"published_at": {"gte": since}}}
-    ]
+    base["query"]["bool"]["filter"] = [{"range": {"published_at": {"gte": since}}}]
     base["sort"] = [
         {"published_at": {"order": "desc"}},
         "_score",
@@ -95,6 +94,7 @@ def _latest_semantic_query(query_text: str, categories: list[str]) -> dict:
 # ---------------------------------------------------------------------------
 # Result parser
 # ---------------------------------------------------------------------------
+
 
 def _parse_hits(hits: list[dict]) -> list[ArticleHit]:
     articles: list[ArticleHit] = []
@@ -117,6 +117,7 @@ def _parse_hits(hits: list[dict]) -> list[ArticleHit]:
 # ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
+
 
 @traceable(name="NewsSearchAgent")
 def run_news_search_agent(
