@@ -1,6 +1,0 @@
-agents
-api
-config
-graph
-main
-resources

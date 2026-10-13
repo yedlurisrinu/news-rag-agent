@@ -29,7 +29,6 @@ ENV PATH="/app/.venv/bin:$PATH"
 
 # Copy source code and static files
 COPY src/ ./src/
-# COPY . . not needed as src amd static is already covering
 COPY static/ ./static/
 
 # Set PYTHONPATH so imports resolve cleanly
@@ -42,7 +41,7 @@ RUN mkdir -p /app/logs/ && chown -R appuser:appuser /app/logs
 
 USER appuser
 
-# App listens on 8003
-EXPOSE 8003
+# App listens on 8007
+EXPOSE 8007
 
-CMD ["python", "-m", "uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "8003", "--log-level", "info"]
+CMD ["python", "-m", "uvicorn", "api.app:app", "--host", "0.0.0.0", "--port", "8007", "--log-level", "info"]

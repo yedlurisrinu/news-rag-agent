@@ -1,24 +1,24 @@
-"""
-@Author: Srini Yedluri
-@Date: 3/27/26
-@Time: 11:51 AM
-@File: news_category_search_agent.py
-"""
+# """
+# @Author: Srini Yedluri
+# @Date: 3/27/26
+# @Time: 11:51 AM
+# @File: news_category_search_agent.py
+# """
 
-from __future__ import annotations
+# from __future__ import annotations
 
-"""
-agents/news_category_search_agent.py
+# """
+# agents/news_category_search_agent.py
 
-Responsibility:
-  1. Parse the user query to identify news categories of interest.
-  2. Verify those categories exist in the news_articles index.
-  3. Detect whether the user wants the *latest* articles (recency intent).
-  4. Return a CategorySearchResult consumed by news_search_agent.
+# Responsibility:
+#   1. Parse the user query to identify news categories of interest.
+#   2. Verify those categories exist in the news_articles index.
+#   3. Detect whether the user wants the *latest* articles (recency intent).
+#   4. Return a CategorySearchResult consumed by news_search_agent.
 
-Technology: LangChain LCEL + OpenAI function-calling + direct ES aggregation.
-Tracing:    LangSmith via LANGCHAIN_TRACING_V2 / LANGCHAIN_API_KEY env vars.
-"""
+# Technology: LangChain LCEL + OpenAI function-calling + direct ES aggregation.
+# Tracing:    LangSmith via LANGCHAIN_TRACING_V2 / LANGCHAIN_API_KEY env vars.
+# """
 
 import logging
 import os
@@ -29,7 +29,8 @@ from langchain_openai import ChatOpenAI
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
-from agents.base import CategorySearchResult, NEWS_INDEX, get_es_client
+from channels.category_search_results import CategorySearchResult
+from agents.base import get_es_client
 
 logger = logging.getLogger(__name__)
 
@@ -79,8 +80,8 @@ _CATEGORY_PROMPT = ChatPromptTemplate.from_messages(
    Set to false for general knowledge questions, coding help, math, creative writing,
    personal advice, opinions, or anything clearly unrelated to news.
 2. `categories`: the news topic categories being asked about.
-   Use well-known category names such as: technology, politics, sports, business,
-   entertainment, science, health, world, finance, climate, ai, crypto.
+   Use well-known category names such as: technology, tech, politics, sports, business,
+   entertainment, science, health, world, finance, fin, climate, ai, crypto.
    If the query spans multiple topics return all of them.
    Return an empty list when is_news_query is false.
 3. `fetch_latest`: true only when the user explicitly wants recent/latest/today's news.
@@ -119,7 +120,7 @@ def _resolve_categories_in_es(categories: list[str]) -> list[str]:
     es = get_es_client()
     try:
         resp = es.search(
-            index=NEWS_INDEX,
+            index="news_index",
             body={
                 "size": 0,
                 "query": {

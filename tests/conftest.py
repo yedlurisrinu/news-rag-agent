@@ -26,7 +26,7 @@ import pytest
 @pytest.fixture()
 def sample_article_hit():
     """Return a single populated ArticleHit."""
-    from agents.base import ArticleHit
+    from adapters.elasticsearch import ArticleHit
 
     return ArticleHit(
         article_id="abc-123",
@@ -42,7 +42,7 @@ def sample_article_hit():
 @pytest.fixture()
 def sample_articles(sample_article_hit):
     """Return a small list of ArticleHit objects."""
-    from agents.base import ArticleHit
+    from adapters.elasticsearch import ArticleHit
 
     second = ArticleHit(
         article_id="def-456",
@@ -59,7 +59,7 @@ def sample_articles(sample_article_hit):
 @pytest.fixture()
 def category_result():
     """Return a CategorySearchResult for technology topics."""
-    from agents.base import CategorySearchResult
+    from adapters.elasticsearch import CategorySearchResult
 
     return CategorySearchResult(
         categories=["technology", "ai"], fetch_latest=False, is_news_query=True
@@ -69,7 +69,7 @@ def category_result():
 @pytest.fixture()
 def category_result_latest():
     """Return a CategorySearchResult with fetch_latest=True."""
-    from agents.base import CategorySearchResult
+    from adapters.elasticsearch import CategorySearchResult
 
     return CategorySearchResult(
         categories=["technology"], fetch_latest=True, is_news_query=True
@@ -79,7 +79,7 @@ def category_result_latest():
 @pytest.fixture()
 def off_topic_category_result():
     """Return a CategorySearchResult flagged as non-news."""
-    from agents.base import CategorySearchResult
+    from adapters.elasticsearch import CategorySearchResult
 
     return CategorySearchResult(categories=[], fetch_latest=False, is_news_query=False)
 
@@ -87,7 +87,7 @@ def off_topic_category_result():
 @pytest.fixture()
 def news_search_result(sample_articles):
     """Return a NewsSearchResult wrapping sample_articles."""
-    from agents.base import NewsSearchResult
+    from adapters.elasticsearch import NewsSearchResult
 
     return NewsSearchResult(articles=sample_articles, query_used="latest AI news")
 
@@ -95,7 +95,7 @@ def news_search_result(sample_articles):
 @pytest.fixture()
 def empty_search_result():
     """Return a NewsSearchResult with no articles."""
-    from agents.base import NewsSearchResult
+    from adapters.elasticsearch import NewsSearchResult
 
     return NewsSearchResult(articles=[], query_used="obscure topic")
 

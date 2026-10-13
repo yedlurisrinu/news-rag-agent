@@ -53,7 +53,7 @@ def test_client():
 @pytest.fixture()
 def mock_agent_response():
     """Return a fully populated AgentResponse."""
-    from agents.base import AgentResponse
+    from adapters.elasticsearch import AgentResponse
 
     return AgentResponse(
         query="What is happening in AI?",
@@ -196,7 +196,7 @@ class TestQueryEndpoint:
         assert resp.status_code == 422
 
     def test_agent_error_returns_500(self, test_client):
-        from agents.base import AgentResponse
+        from adapters.elasticsearch import AgentResponse
 
         error_response = AgentResponse(
             query="test",
@@ -212,7 +212,7 @@ class TestQueryEndpoint:
         assert resp.status_code == 500
 
     def test_agent_error_detail_in_response(self, test_client):
-        from agents.base import AgentResponse
+        from adapters.elasticsearch import AgentResponse
 
         error_response = AgentResponse(
             query="test",

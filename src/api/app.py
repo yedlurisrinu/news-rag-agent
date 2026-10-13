@@ -7,40 +7,49 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
-from starlette.responses import FileResponse
-from starlette.staticfiles import StaticFiles
-
 """
 api/app.py
 
-FastAPI application — listens on port 8003.
+FastAPI application — listens on port 8007.
 
 Endpoints:
-  POST /query    — run the full multi-agent pipeline
+  POST /query    — run the Graph with multi-node
   GET  /health   — liveness probe
-  GET  /ready    — readiness probe (pings Elasticsearch)
 """
-
+from pydantic import Field
+from pathlib import Path
+from typing import Annotated, Union
+from graph.graph import run_graph
+from starlette.responses import FileResponse
+from starlette.staticfiles import StaticFiles
+from data.query_success_response import QuerySuccessResponse
+from data.query_failed_response import QueryFailedResponse
 from config.logging_setup import setup_logging
 from config.vault_secrets import load_secrets
-from fastapi import FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
-from agents.manager_agent import run_manager_agent
+from data.query_request import QueryRequest
+from langgraph.graph.state import CompiledStateGraph
+# from agents.manager_agent import run_manager_agent
 import logging
+from config.application_config import load_config
+from adapters.elasticsearch import get_es_client
 
 setup_logging()
-load_secrets()
-
 logger = logging.getLogger(__name__)
 
+load_secrets()
+load_config()
+get_es_client()
+from adapters.lifespan import lifespan
 app = FastAPI(
-    title="News Summary RAG",
-    description="Multi-agent pipeline: Category Search → Semantic Search → Summarise",
+    title="News Summary Workflow",
+    description="Agent Graph pipeline: Category Search → Semantic Search → Summarise -> Email (TODO)",
     version="1.0.0",
+    lifespan=lifespan
 )
+def get_graph(request: Request) -> CompiledStateGraph:
+    return request.app.state.graph   
 
 app.add_middleware(
     CORSMiddleware,
@@ -50,31 +59,6 @@ app.add_middleware(
 )
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
-
-# ---------------------------------------------------------------------------
-# Request / Response schemas
-# ---------------------------------------------------------------------------
-
-
-class QueryRequest(BaseModel):
-    query: str = Field(..., min_length=3, description="Natural language news query")
-
-
-class ArticleOut(BaseModel):
-    title: str
-    link: str
-    source: str
-    published_at: str
-
-
-class QueryResponse(BaseModel):
-    query: str
-    categories: list[str]
-    summary: str
-    articles: list[ArticleOut]
-    duration_seconds: float
-    error: str | None = None
-
 
 # ---------------------------------------------------------------------------
 # Endpoints
@@ -88,52 +72,26 @@ chat_ui_path = Path(__name__).parent.parent
 def serve_ui():
     return FileResponse(str(chat_ui_path) + "/static/chat-ui.html")
 
-
 @app.get("/health", tags=["Ops"])
 def health() -> dict:
     return {"status": "ok"}
 
-
-@app.get("/ready", tags=["Ops"])
-def ready() -> dict:
-    """Ping Elasticsearch to confirm the app is ready to serve traffic."""
-    from agents.base import get_es_client
-
-    try:
-        es = get_es_client()
-        if not es.ping():
-            raise RuntimeError("ping returned False")
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Elasticsearch not reachable: {exc}",
-        ) from exc
-    return {"status": "ready"}
-
-
-@app.post("/query", response_model=QueryResponse, tags=["Pipeline"])
-def query(request: QueryRequest) -> QueryResponse:
+@app.post(
+    "/query",
+    response_model=Annotated[
+        Union[QuerySuccessResponse, QueryFailedResponse],
+        Field(discriminator="status"),
+    ],
+    responses={502: {"model": QueryFailedResponse, "description": "Agent failed"}},
+    tags=["Pipeline"],
+)
+def query(request: QueryRequest, graph: Annotated[CompiledStateGraph, Depends(get_graph)]) -> QuerySuccessResponse | QueryFailedResponse:
     """
-    Run the full multi-agent news RAG pipeline.
-
-    Flow:
-      1. CategorySearchAgent  — identifies topic categories from the query
-      2. NewsSearchAgent      — semantic search in Elasticsearch
-      3. SummaryAgent         — gpt-4o-mini summarization
+    Run the full agent graph news summary for a query using ElasticSearch and Qdrant as RAG backend.
     """
     logger.info("POST /query  query=%r", request.query)
-    result = run_manager_agent(str(request.query))  # ty: ignore[invalid-argument-type]  # T03-S15: langsmith 0.1.x ParamSpec; remove after upgrade
+    response: QuerySuccessResponse | QueryFailedResponse = run_graph(
+        {"query": str(request.query)}, graph)
+    # run_manager_agent(str(request.query))  # ty: ignore[invalid-argument-type]  # T03-S15: langsmith 0.1.x ParamSpec; remove after upgrade
+    return response
 
-    if result.error:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=result.error,
-        )
-
-    return QueryResponse(
-        query=result.query,
-        categories=result.categories,
-        summary=result.summary,
-        articles=[ArticleOut(**a) for a in result.articles],
-        duration_seconds=result.duration_seconds,
-    )

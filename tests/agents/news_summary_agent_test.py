@@ -28,7 +28,7 @@ class TestBuildContext:
         assert "No articles were retrieved" in ctx
 
     def test_single_article_formatted_correctly(self, sample_article_hit):
-        from agents.base import NewsSearchResult
+        from adapters.elasticsearch import NewsSearchResult
         from agents.news_summary_agent import _build_context
 
         result = NewsSearchResult(articles=[sample_article_hit], query_used="AI")
@@ -52,7 +52,7 @@ class TestBuildContext:
         assert "[2]" in ctx
 
     def test_content_truncated_to_800_chars(self):
-        from agents.base import ArticleHit, NewsSearchResult
+        from adapters.elasticsearch import ArticleHit, NewsSearchResult
         from agents.news_summary_agent import _build_context
 
         long_content = "x" * 1500
@@ -72,7 +72,7 @@ class TestBuildContext:
         assert "x" * 800 in ctx
 
     def test_published_at_truncated_to_date(self, sample_article_hit):
-        from agents.base import NewsSearchResult
+        from adapters.elasticsearch import NewsSearchResult
         from agents.news_summary_agent import _build_context
 
         result = NewsSearchResult(articles=[sample_article_hit], query_used="AI")
@@ -83,7 +83,7 @@ class TestBuildContext:
         assert "T10:00:00Z" not in ctx
 
     def test_empty_published_at_shows_unknown_date(self):
-        from agents.base import ArticleHit, NewsSearchResult
+        from adapters.elasticsearch import ArticleHit, NewsSearchResult
         from agents.news_summary_agent import _build_context
 
         art = ArticleHit(
@@ -185,7 +185,7 @@ class TestRunSummaryAgent:
         assert isinstance(summary, str)
 
     def test_single_article_produces_summary(self, sample_article_hit):
-        from agents.base import NewsSearchResult
+        from adapters.elasticsearch import NewsSearchResult
 
         mock_chain = MagicMock()
         mock_chain.invoke.return_value = "One article summary."

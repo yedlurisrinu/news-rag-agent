@@ -25,7 +25,7 @@ import pytest
 
 def _clear_es_cache():
     """Clear the lru_cache on get_es_client so tests don't bleed state."""
-    from agents.base import get_es_client
+    from adapters.elasticsearch import get_es_client
 
     get_es_client.cache_clear()
 
@@ -57,7 +57,7 @@ class TestGetEsClient:
             },
         ):
             with pytest.raises(RuntimeError, match="ELASTIC_URL and ELASTIC_API_KEY"):
-                from agents.base import get_es_client
+                from adapters.elasticsearch import get_es_client
 
                 get_es_client()
 
@@ -76,7 +76,7 @@ class TestGetEsClient:
             },
         ):
             with pytest.raises(RuntimeError, match="ELASTIC_URL and ELASTIC_API_KEY"):
-                from agents.base import get_es_client
+                from adapters.elasticsearch import get_es_client
 
                 get_es_client()
 
@@ -98,7 +98,7 @@ class TestGetEsClient:
             ),
             patch("agents.base.Elasticsearch", return_value=fake_es) as mock_cls,
         ):
-            from agents.base import get_es_client
+            from adapters.elasticsearch import get_es_client
 
             result = get_es_client()
 
@@ -124,7 +124,7 @@ class TestGetEsClient:
             ),
             patch("agents.base.Elasticsearch", return_value=fake_es),
         ):
-            from agents.base import get_es_client
+            from adapters.elasticsearch import get_es_client
 
             first = get_es_client()
             second = get_es_client()
@@ -139,7 +139,7 @@ class TestGetEsClient:
 
 class TestArticleHit:
     def test_defaults_score_to_zero(self):
-        from agents.base import ArticleHit
+        from adapters.elasticsearch import ArticleHit
 
         art = ArticleHit(
             article_id="id-1",
@@ -152,7 +152,7 @@ class TestArticleHit:
         assert art.score == 0.0
 
     def test_all_fields_stored(self):
-        from agents.base import ArticleHit
+        from adapters.elasticsearch import ArticleHit
 
         art = ArticleHit(
             article_id="id-2",
@@ -172,7 +172,7 @@ class TestArticleHit:
         assert art.score == 2.5
 
     def test_empty_strings_allowed(self):
-        from agents.base import ArticleHit
+        from adapters.elasticsearch import ArticleHit
 
         art = ArticleHit(
             article_id="",
@@ -192,7 +192,7 @@ class TestArticleHit:
 
 class TestCategorySearchResult:
     def test_stores_categories_and_flag(self):
-        from agents.base import CategorySearchResult
+        from adapters.elasticsearch import CategorySearchResult
 
         result = CategorySearchResult(
             categories=["technology", "sports"],
@@ -202,7 +202,7 @@ class TestCategorySearchResult:
         assert result.fetch_latest is True
 
     def test_empty_categories_allowed(self):
-        from agents.base import CategorySearchResult
+        from adapters.elasticsearch import CategorySearchResult
 
         result = CategorySearchResult(categories=[], fetch_latest=False)
         assert result.categories == []
@@ -216,7 +216,7 @@ class TestCategorySearchResult:
 
 class TestNewsSearchResult:
     def test_stores_articles_and_query(self, sample_articles):
-        from agents.base import NewsSearchResult
+        from adapters.elasticsearch import NewsSearchResult
 
         result = NewsSearchResult(
             articles=sample_articles,
@@ -226,7 +226,7 @@ class TestNewsSearchResult:
         assert result.query_used == "AI healthcare news"
 
     def test_empty_articles(self):
-        from agents.base import NewsSearchResult
+        from adapters.elasticsearch import NewsSearchResult
 
         result = NewsSearchResult(articles=[], query_used="nothing")
         assert result.articles == []
@@ -239,7 +239,7 @@ class TestNewsSearchResult:
 
 class TestAgentResponse:
     def test_defaults_error_to_none(self):
-        from agents.base import AgentResponse
+        from adapters.elasticsearch import AgentResponse
 
         resp = AgentResponse(
             query="test",
@@ -251,7 +251,7 @@ class TestAgentResponse:
         assert resp.error is None
 
     def test_error_field_stored(self):
-        from agents.base import AgentResponse
+        from adapters.elasticsearch import AgentResponse
 
         resp = AgentResponse(
             query="test",
@@ -264,7 +264,7 @@ class TestAgentResponse:
         assert resp.error == "Something went wrong"
 
     def test_all_fields_stored(self, sample_articles):
-        from agents.base import AgentResponse
+        from adapters.elasticsearch import AgentResponse
 
         articles_dict = [{"title": a.title} for a in sample_articles]
         resp = AgentResponse(

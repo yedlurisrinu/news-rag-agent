@@ -1,0 +1,15 @@
+# In container
+# ELASTIC_URL: "http://elasticsearch:9200" 
+# On local Host
+ELASTIC_URL: "http://localhost:9200"
+request_timeout: 60
+retry_on_timeout: True
+max_retries: 3
+http_compress: True
+# Connection pooling for cloud
+connections_per_node: 10
+
+# for local, for docker postgres
+PG_HOST: "localhost"
+PG_PORT: 5432
+
