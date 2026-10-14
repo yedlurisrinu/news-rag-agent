@@ -5,7 +5,7 @@ from hvac import Client
 logger = logging.getLogger(__name__)
 
 
-def load_secrets():
+def load_secrets() -> None:
     """
     Load secrets from Vault into environment variables.
     Works consistently in Local, Docker, and GitHub Actions and more secure to handle secrets

@@ -1,28 +1,27 @@
 # News Search & Summary App
 
-A **FastAPI-based multi-agent RAG application** that accepts natural-language news queries,
-performs semantic search over an Elasticsearch index, and returns an AI-generated summary
-together with the source articles that informed it.
+A **FastAPI + LangGraph RAG service** that accepts a natural-language news query,
+retrieves relevant articles from Elasticsearch, and returns an AI-generated,
+grounded summary together with the source articles that informed it.
 
-This service is the **user-facing query layer** in a three-part news intelligence pipeline:
+This service is the **user-facing query layer** of a larger news-intelligence
+pipeline (ingestion and indexing are handled by sibling services):
 
 ```
-┌──────────────────────────┐      Kafka (Confluent Cloud)      ┌─────────────────────────────┐
-│  news_fetch_scheduler    │ ─────────────────────────────────► │  news-consumer-ingester     │
-│  • RSS / API ingestion   │                                     │  • Full-article fetch       │
-│  • Dedup (warm cache +   │                                     │  • Elasticsearch indexing   │
-│    PostgreSQL)           │                                     │  • Embedding pipeline       │
-│  • Confluent publish     │                                     │    (news-embedding-endpoint)│
-└──────────────────────────┘                                     └─────────────┬───────────────┘
-                                                                               │ Elasticsearch
-                                                                               ▼  (news_articles)
-                                                                 ┌─────────────────────────────┐
-                                                                 │  news_search_summary_app    │  ◄── YOU ARE HERE
-                                                                 │  • Category extraction LLM  │
-                                                                 │  • Semantic search (ES)     │
-                                                                 │  • GPT-4o-mini summary      │
-                                                                 │  • FastAPI  port 8003       │
-                                                                 └─────────────────────────────┘
+┌──────────────────────────┐   Kafka (Confluent)   ┌─────────────────────────────┐
+│  news_fetch_scheduler    │ ────────────────────► │  news-consumer-ingester     │
+│  • RSS / API ingestion   │                       │  • Full-article fetch       │
+│  • Dedup (PostgreSQL)    │                       │  • Elasticsearch indexing   │
+└──────────────────────────┘                       └──────────────┬──────────────┘
+                                                                   │ Elasticsearch
+                                                                   ▼  (news_articles)
+                                                    ┌─────────────────────────────┐
+                                                    │  news-summary-agent         │ ◄── THIS REPO
+                                                    │  • Intent + category LLM    │
+                                                    │  • Semantic/text search (ES)│
+                                                    │  • gpt-4o-mini summary      │
+                                                    │  • FastAPI  ·  port 8007    │
+                                                    └─────────────────────────────┘
 ```
 
 ---
@@ -31,96 +30,175 @@ This service is the **user-facing query layer** in a three-part news intelligenc
 
 1. [Architecture](#architecture)
 2. [Prerequisites](#prerequisites)
-3. [Local Infrastructure Setup](#local-infrastructure-setup)
-4. [Running the Application](#running-the-application)
-5. [API Endpoints](#api-endpoints)
-6. [Chat UI](#chat-ui)
-7. [Configuration](#configuration)
-8. [Running Tests](#running-tests)
+3. [Configuration](#configuration)
+4. [Local Infrastructure Setup](#local-infrastructure-setup)
+5. [Running the Application](#running-the-application)
+6. [API Endpoints](#api-endpoints)
+7. [Chat UI](#chat-ui)
+8. [Testing & Code Quality](#testing--code-quality)
 9. [Docker](#docker)
-10. [Demo](#demo)
+10. [Project Structure](#project-structure)
+11. [Demo](#demo)
+12. [Troubleshooting](#troubleshooting)
 
 ---
 
 ## Architecture
 
-### Multi-Agent Pipeline
+The request pipeline is a **LangGraph `StateGraph`** compiled with a
+`PostgresSaver` checkpointer. The FastAPI lifespan builds the graph once at
+startup, injecting a shared chat model, Elasticsearch client, and Postgres
+connection; each request invokes the compiled graph.
 
 ```
-User Query (POST /query)
-        │
-        ▼
-┌───────────────────────┐
-│  NewsCategorySearch   │  LangChain LCEL + gpt-4o-mini
-│  Agent                │  Extracts topic categories &
-│                       │  fetch_latest intent from query
-└──────────┬────────────┘
-           │  CategorySearchResult
-           ▼
-┌───────────────────────┐
-│  NewsSearch Agent     │  Elasticsearch semantic_text query
-│                       │  Server-side embeddings via
-│                       │  news-embedding-endpoint inference
-└──────────┬────────────┘
-           │  NewsSearchResult  (up to 8 ArticleHit objects)
-           ▼
-┌───────────────────────┐
-│  NewsSummary Agent    │  LangChain LCEL + gpt-4o-mini
-│                       │  Produces a 3–5 paragraph factual
-│                       │  summary with inline citations
-└──────────┬────────────┘
-           │  AgentResponse
-           ▼
-    JSON response to client
+POST /query ──► NewsInput ──► run_graph ──► graph.invoke
+                                               │
+                                               ▼
+                                         ┌────────────┐
+                                         │  classify  │  ClassifyIntent
+                                         │            │  LLM → is_news_query,
+                                         │            │  categories, fetch_latest
+                                         └──────┬─────┘  (+ ES category check)
+                                   is_news_query? │
+                            ┌────────────────────┴───────────────────┐
+                            │ false                                   │ true
+                            ▼                                         ▼
+                   ┌─────────────────┐                          ┌──────────┐
+                   │ reply_off_topic │  Guard Rail #1           │  search  │  Search
+                   └────────┬────────┘                          │          │  ES multi_match
+                            │                                   └────┬─────┘  (+7-day filter &
+                            │                      article_refs?     │         recency sort if
+                            │                 ┌────────────────────┬─┘         fetch_latest)
+                            │                 │ empty              │ found
+                            │                 ▼                    ▼
+                            │        ┌──────────────────┐    ┌───────────┐
+                            │        │ reply_no_results │    │ summarize │  Summary
+                            │        │  Guard Rail #2   │    │           │  ES mget + grounded
+                            │        └────────┬─────────┘    └─────┬─────┘  cited LLM summary
+                            └──────────────── ┴────────────────────┘
+                                               ▼
+                                   SummaryOk  ──►  QuerySuccessResponse
+                                                    (or QueryFailedResponse on error)
 ```
 
-### Key Components
+**Two guard rails** keep the pipeline cheap and safe:
 
-| Module                                     | Responsibility                                                           |
-|--------------------------------------------|--------------------------------------------------------------------------|
-| `src/api/app.py`                           | FastAPI application, request validation, CORS, static file serving       |
-| `src/agents/manager_agent.py`              | Orchestrates the three-agent pipeline, error handling, LangSmith tracing |
-| `src/agents/news_category_search_agent.py` | LLM intent parsing + ES category verification                            |
-| `src/agents/news_search_agent.py`          | Elasticsearch semantic search query builder and executor                 |
-| `src/agents/news_summary_agent.py`         | GPT-4o-mini summarization chain                                          |
-| `src/agents/base.py`                       | Shared ES client factory, data models                                    |
-| `src/config/elastic_setup.py`              | Properties-file reader for Elasticsearch connection config               |
-| `static/chat-ui.html`                      | Self-contained browser chat interface                                    |
+- **Guard Rail #1 (`reply_off_topic`)** — non-news queries never reach search or
+  the summariser; the router `route_after_classify` sends them straight to a
+  canned reply.
+- **Guard Rail #2 (`reply_no_results`)** — if search returns no articles,
+  `route_after_search` short-circuits to a canned reply instead of invoking the
+  summarisation LLM with empty context.
+
+**Checkpointing:** the `thread_id` is a `sha256` of the normalised query, backed
+by `PostgresSaver`, so graph state is persisted per unique query.
+
+### Nodes & key modules
+
+| Module | Responsibility |
+|--------|----------------|
+| `src/api/app.py` | FastAPI app, routes, CORS, static mount, lifespan wiring |
+| `src/graph/build_graph.py` | Assembles the `StateGraph` (nodes, routers, edges) and compiles it |
+| `src/graph/run_graph_workflow.py` | Invokes the graph for one query; maps final state → API response |
+| `src/nodes/classification.py` | `ClassifyIntent` — LLM intent/category extraction + ES category check |
+| `src/nodes/search.py` | `Search` — builds & runs the Elasticsearch query, returns article refs |
+| `src/nodes/summary.py` | `Summary` — `mget` article bodies, grounded cited summary via LLM |
+| `src/channels/` | `TypedDict` state contracts (`NewsState`) + per-node result shapes & reducers |
+| `src/data/` | Pydantic request/response models (`QueryRequest`, `QuerySuccessResponse`, …) |
+| `src/adapters/` | `Elasticsearch`, chat model, Postgres, and FastAPI lifespan factories |
+| `src/config/` | Application-config loader, logging setup, Vault secret loader |
+| `static/chat-ui.html` | Self-contained browser chat interface (served at `/`) |
 
 ---
 
 ## Prerequisites
 
-### External Services
+### Runtime
 
-| Service                        | Purpose                                                                                                                             | Default address         |
-|--------------------------------|-------------------------------------------------------------------------------------------------------------------------------------|-------------------------|
-| **HashiCorp Vault**            | Stores `ELASTIC_URL`, `ELASTIC_API_KEY`, `OPENAI_API_KEY`, `LANGCHAIN_API_KEY`                                                      | `http://localhost:8200` |
-| **PostgreSQL**                 | Used by `news_fetch_scheduler` for article deduplication (not directly by this service, but required in the shared `infra-network`) | `localhost:5432`        |
+- **Python 3.12**
+- [uv](https://docs.astral.sh/uv/) for dependency management (`pyproject.toml` + `uv.lock`)
+- **Docker & Docker Compose** (for containerised runs)
+- **Elastic Cloud / Elasticsearch 8.x** with a populated `news_articles` index
+- **OpenAI API key** (`gpt-4o-mini`)
+- Optional: a **LangSmith** account for tracing
 
-### Runtime Requirements
+### External services
 
-- Python **3.12**
-- [uv](https://docs.astral.sh/uv/) (dependency management: `pyproject.toml` + `uv.lock`)
-- Docker & Docker Compose (for containerised runs)
-- Access to **Elastic Cloud** (Elasticsearch 8.x with a semantic inference endpoint named `news-embedding-endpoint`)
-- **OpenAI API key** (gpt-4o-mini)
-- Optional: LangSmith account for end-to-end tracing
+| Service | Purpose | Default address |
+|---------|---------|-----------------|
+| **HashiCorp Vault** | Supplies runtime secrets (ES API key, OpenAI key, Postgres creds) as env vars at startup | `http://localhost:8200` |
+| **PostgreSQL** | Backs the LangGraph `PostgresSaver` checkpointer | `localhost:5432` |
+| **Elasticsearch** | Stores the `news_articles` index that search/summary read | Elastic Cloud |
+
+---
+
+## Configuration
+
+Configuration is split into **three** places:
+
+### 1. Bootstrap env vars (set externally per environment)
+
+| Variable | Description |
+|----------|-------------|
+| `VAULT_ADDR` | Vault address (e.g. `http://localhost:8200`) |
+| `VAULT_TOKEN` | Vault auth token |
+| `VAULT_SECRET_PATH` | KV v2 path to read, e.g. `secret/CREDENTIALS` |
+
+These are the **only** variables that must be set outside the app — everything
+else is loaded from Vault or the YAML config.
+
+### 2. Vault secrets (injected into environment variables)
+
+Read from `VAULT_SECRET_PATH` at startup by `src/config/vault_secrets.py`:
+
+| Secret key | Required | Description |
+|------------|----------|-------------|
+| `ELASTIC_READ_API_KEY` | Yes | Elasticsearch API key (read access) |
+| `OPENAI_API_KEY` | Yes | OpenAI key for `gpt-4o-mini` |
+| `POSTGRES_DB` | Yes | Checkpointer database name |
+| `POSTGRES_USER` | Yes | Checkpointer database user |
+| `POSTGRES_PASSWORD` | Yes | Checkpointer database password |
+| `PG_HOST` / `PG_PORT` | No | Postgres host/port (default `localhost` / `5432`) |
+| `LANGCHAIN_API_KEY` | No | LangSmith API key |
+| `LANGCHAIN_TRACING_V2` | No | `"true"` to enable LangSmith tracing |
+| `LANGCHAIN_PROJECT` | No | LangSmith project name |
+
+### 3. Application config — `src/resources/application-config.yaml`
+
+Non-secret settings loaded by `src/config/application_config.py`:
+
+```yaml
+ELASTIC_URL: "http://localhost:9200"   # Elasticsearch endpoint (non-secret)
+request_timeout: 60
+retry_on_timeout: True
+max_retries: 3
+http_compress: True
+connections_per_node: 10
+ES_INDEX: news_articles
+CATEGORY_QUERY: { ... }                # template for the category-check query
+SEARCH_QUERY_TEMPLATE: { ... }         # template for the article search query
+```
+
+### Elasticsearch index requirements
+
+| Setting | Value |
+|---------|-------|
+| Index name | `news_articles` |
+| Document `_id` | equal to the `article_id` field (summary retrieval uses `mget` by id) |
+| Source fields | `article_id`, `title`, `content`, `source`, `published_at`, `link` |
 
 ---
 
 ## Local Infrastructure Setup
 
-All three infrastructure services must run inside shared Docker networks before starting this app.
-
-### 1 — Create shared Docker networks
+### 1 — Create the shared Docker networks
 
 ```bash
 docker network create vault-network
-docker network create infra-network
+docker network create services_network
 ```
 
-### 2 — Start HashiCorp Vault
+### 2 — Start HashiCorp Vault and populate secrets
 
 ```bash
 docker run -d \
@@ -130,29 +208,31 @@ docker run -d \
   -e 'VAULT_DEV_ROOT_TOKEN_ID=dev-root-token' \
   -e 'VAULT_DEV_LISTEN_ADDRESS=0.0.0.0:8200' \
   hashicorp/vault:latest server -dev
-```
 
-Populate the secrets this app expects:
-
-```bash
 export VAULT_ADDR=http://localhost:8200
 export VAULT_TOKEN=dev-root-token
 
-vault kv put secret/DB_SERVICES \
-  ELASTIC_URL="https://<your-elastic-cloud-endpoint>" \
-  ELASTIC_API_KEY="<your-elastic-api-key>" \
+vault kv put secret/CREDENTIALS \
+  ELASTIC_READ_API_KEY="<your-elastic-read-api-key>" \
   OPENAI_API_KEY="<your-openai-api-key>" \
+  POSTGRES_DB="newsdb" \
+  POSTGRES_USER="news" \
+  POSTGRES_PASSWORD="news" \
+  PG_HOST="localhost" \
+  PG_PORT="5432" \
   LANGCHAIN_API_KEY="<your-langsmith-api-key>" \
   LANGCHAIN_TRACING_V2="true" \
-  LANGCHAIN_PROJECT="news-summary-app"
+  LANGCHAIN_PROJECT="news-summary-agent"
 ```
 
-### 3 — Start PostgreSQL (required by the ingestion pipeline)
+> `ELASTIC_URL` is **not** a secret — set it in `application-config.yaml`.
+
+### 3 — Start PostgreSQL (checkpointer backend)
 
 ```bash
 docker run -d \
   --name postgres-server \
-  --network infra-network \
+  --network services_network \
   -p 5432:5432 \
   -e POSTGRES_USER=news \
   -e POSTGRES_PASSWORD=news \
@@ -164,57 +244,50 @@ docker run -d \
 
 ## Running the Application
 
-### Option A — Local (virtualenv)
+### Option A — Local (uv virtualenv)
 
 ```bash
-# 1. Create .venv and install runtime + dev dependencies from uv.lock
+# 1. Create .venv and install runtime + dev dependencies from the lock file
 uv sync
 
-# 2. Set Vault environment variables
+# 2. Set the Vault bootstrap variables
 export VAULT_ADDR=http://localhost:8200
 export VAULT_TOKEN=dev-root-token
-export VAULT_SECRET_PATH=secret/DB_SERVICES
+export VAULT_SECRET_PATH=secret/CREDENTIALS
 
-# 3. Start the server (run from repo root so static/ is on the path)
-PYTHONPATH=src uv run uvicorn api.app:app --host 0.0.0.0 --port 8003 --reload
+# 3. Start the server (run from the repo root so static/ resolves)
+PYTHONPATH=src uv run uvicorn api.app:app --host 0.0.0.0 --port 8007 --reload
 ```
 
-The API will be available at `http://localhost:8003`.
+The API is then available at `http://localhost:8007`.
 
 ### Option B — Docker Compose
 
 ```bash
-# Export the Vault token so docker-compose can inject it
 export VAULT_TOKEN=dev-root-token
-
 docker compose up --build
 ```
 
-The `docker-compose.yml` attaches the container to `vault-network` and
-`infra-network` so it can reach `vault-server` and the Elasticsearch cluster.
+Compose attaches the container to `vault-network` and `services_network`, points
+`VAULT_ADDR` at `http://vault-server:8200`, and reads `VAULT_SECRET_PATH=secret/CREDENTIALS`.
 
 ---
 
 ## API Endpoints
 
-| Method  | Path      | Description                                                       |
-|---------|-----------|-------------------------------------------------------------------|
-| `GET`   | `/`       | Serves the Chat UI (`static/chat-ui.html`)                        |
-| `GET`   | `/health` | Liveness probe — always returns `{"status": "ok"}`                |
-| `GET`   | `/ready`  | Readiness probe — pings Elasticsearch; returns 503 if unreachable |
-| `POST`  | `/query`  | Runs the full multi-agent pipeline and returns a news summary     |
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/` | Serves the Chat UI (`static/chat-ui.html`) |
+| `GET` | `/health` | Liveness probe — returns `{"status": "ok"}` |
+| `POST` | `/query` | Runs the full graph and returns a news summary |
 
-### POST /query — Request
+### `POST /query` — request
 
 ```json
-{
-  "query": "What are the latest developments in AI regulation?"
-}
+{ "query": "What are the latest developments in AI regulation?" }
 ```
 
-**Validation:** `query` must be at least 3 characters.
-
-### POST /query — Response
+### `POST /query` — success response (`status: "ok"`)
 
 ```json
 {
@@ -223,299 +296,218 @@ The `docker-compose.yml` attaches the container to `vault-network` and
   "summary": "Regulators across the EU and US are accelerating AI oversight...",
   "articles": [
     {
-      "article_id": "abc-123",
       "title": "EU AI Act Enters Final Phase",
+      "link": "https://eurotech.example.com/eu-ai-act",
       "source": "EuroTech",
-      "published_at": "2026-03-28T09:00:00Z",
-      "link": "https://eurotech.example.com/eu-ai-act"
+      "published_at": "2026-03-28"
     }
   ],
   "duration_seconds": 2.341,
-  "error": null
+  "status": "ok"
 }
 ```
 
-### Interactive API Docs
+### `POST /query` — failure response (`status: "failed"`)
 
-FastAPI generates live docs at:
+```json
+{
+  "query": "...",
+  "error": "RuntimeError: ...",
+  "error_code": 500,
+  "status": "failed"
+}
+```
 
-- **Swagger UI:** `http://localhost:8003/docs`
-- **ReDoc:** `http://localhost:8003/redoc`
+### Interactive API docs
+
+- **Swagger UI:** `http://localhost:8007/docs`
+- **ReDoc:** `http://localhost:8007/redoc`
 
 ---
 
 ## Chat UI
 
-A self-contained single-page chat interface is bundled at `static/chat-ui.html`.
-
-### Access via the server (recommended)
-
-Once the FastAPI server is running, open your browser at:
+A self-contained single-page chat interface is bundled at `static/chat-ui.html`
+and served at the root path `/`.
 
 ```
-http://localhost:8003/
+http://localhost:8007/
 ```
 
-The server mounts `static/` and serves `chat-ui.html` at the root path `/`.
-No additional configuration is needed — the UI will POST queries to `http://127.0.0.1:8003/query` automatically.
+The page POSTs queries to `http://127.0.0.1:8007/query`, so the FastAPI server
+must be running (whether the page is opened via the server or directly from disk).
 
-### Access as a standalone file (without the server)
-
-```bash
-# macOS
-open static/chat-ui.html
-
-# Linux
-xdg-open static/chat-ui.html
-```
-
-> **Note:** When opened from disk the UI still POSTs to `http://127.0.0.1:8003/query`,
-> so the FastAPI server must be running for queries to work.
-
-### Chat UI features
-
-- Dark-themed terminal-style interface with CSS animations
-- Markdown rendering — headers, bold, code blocks, ordered/unordered lists
-- Animated typing indicator while the pipeline is processing
-- Structured response display: summary, categories, source articles, duration
-- Session management — type `bye` to gracefully end the session
-- Keyboard shortcuts: `Enter` to send, `Shift+Enter` for a new line
+**Features:** terminal-style dark theme, Markdown rendering, an animated typing
+indicator, structured responses (summary / categories / source articles /
+duration), and `Enter` to send · `Shift+Enter` for a newline.
 
 ---
 
-## Configuration
+## Testing & Code Quality
 
-### Vault secrets (`secret/DB_SERVICES`)
-
-| Secret key             | Required                   | Description                                |
-|------------------------|----------------------------|--------------------------------------------|
-| `ELASTIC_URL`          | Yes                        | Elastic Cloud HTTPS endpoint               |
-| `ELASTIC_API_KEY`      | Yes                        | Elastic Cloud API key                      |
-| `OPENAI_API_KEY`       | Yes                        | OpenAI key for gpt-4o-mini                 |
-| `LANGCHAIN_API_KEY`    | No                         | LangSmith API key for tracing              |
-| `LANGCHAIN_TRACING_V2` | No                         | Set to `"true"` to enable LangSmith traces |
-| `LANGCHAIN_PROJECT`    | No                         | LangSmith project name                     |
-| `VAULT_ADDR`           | HashiCorp Vault address    | `http://vault:8200`                        |
-| `VAULT_TOKEN`          | Vault token                | —                                          |
-| `VAULT_SECRET_PATH`    | KV v2 path for app secrets | `secret/data/DB_SERVICES`                 |
-
-### Elasticsearch connection (`src/resources/elastic-config.properties`)
-
-```properties
-request_timeout=60
-retry_on_timeout=True
-max_retries=3
-http_compress=True
-connections_per_node=10
-```
-
-### Elasticsearch index requirements
-
-| Setting            | Value                                                              |
-|--------------------|--------------------------------------------------------------------|
-| Index name         | `news_articles`                                                    |
-| Semantic field     | `content.semantic` (type `semantic_text`)                          |
-| Inference endpoint | `news-embedding-endpoint`                                          |
-| Source fields      | `article_id`, `title`, `content`, `source`, `published_at`, `link` |
-
----
-
-## Running Tests
-
-### Install test dependencies
+Dev tooling (`pytest`, `pytest-cov`, `mypy`) is installed by `uv sync`.
 
 ```bash
-uv sync          # dev group (pytest, pytest-cov, ty) is installed by default
-```
-
-> `api/app.py` calls `setup_logging()` and `load_secrets()` at import time;
-> `tests/conftest.py` patches both during that first import, so no Vault is needed.
-
-### Type check (ty)
-
-```bash
-uv run ty check src
-```
-
-> ty is pinned in the dev group (beta, `0.0.x`). Five `@traceable` call sites carry
-> `# ty: ignore[invalid-argument-type]` — a ty ParamSpec limitation with
-> `langsmith` 0.1.x, not a code defect. `unused-ignore-comment = "warn"` in
-> `pyproject.toml` flags them once the langsmith upgrade makes them unnecessary.
-
-### Run all tests
-
-```bash
+# Run the full test suite (config is pinned in pytest.ini: pythonpath=src, *_test.py)
 uv run pytest
-```
 
-### Run a specific test module
+# A single module
+uv run pytest tests/nodes/search_test.py -v
 
-```bash
-uv run pytest tests/agents/news_search_agent_test.py -v
-```
-
-### Run with coverage report
-
-```bash
+# Coverage
 uv run pytest --cov=src --cov-report=term-missing
+
+# Static type check
+uv run mypy src
+
+# Lint / format (ruff) and the configured pre-commit hooks
+uv run ruff check src
+uv run pre-commit run --all-files
 ```
 
-### Test structure
+The suite uses **fakes, not live services**: a `FakeListChatModel` for the LLM, a
+`MagicMock`/`MemorySaver` for Elasticsearch and the checkpointer, and FastAPI
+dependency overrides — so no Vault, Elasticsearch, OpenAI, or Postgres is needed.
+
+### Test layout (mirrors `src/`)
 
 ```
 tests/
-├── conftest.py                              # shared fixtures + startup patches (logging, Vault)
-├── agents/
-│   ├── base_test.py                         # ES client factory, all dataclasses
-│   ├── manager_agent_test.py                # pipeline orchestration, per-stage failure paths
-│   ├── news_category_search_agent_test.py   # LLM intent parsing, ES category verification
-│   ├── news_search_agent_test.py            # query builders, hit parser, fetch_latest path
-│   └── news_summary_agent_test.py           # context builder, LLM chain invocation
-├── api/
-│   └── app_test.py                          # all FastAPI endpoints via TestClient
-└── config/
-    ├── elastic_setup_test.py                # properties file parsing edge cases
-    ├── logging_setup_test.py                # logging config load, fallbacks, CWD independence
-    └── vault_secrets_test.py                # Vault env checks, auth failure, KV v2 reads
+├── conftest.py                 # config load + fake-LLM / mock-ES factories
+├── channels/news_state_test.py # state reducers (merge/dedupe/append)
+├── nodes/                      # classification, search, summary nodes
+├── graph/                      # routers, end-to-end routing, state→response mapping
+├── config/                     # application config + Vault secret loader
+├── adapters/                   # Elasticsearch + chat-model factories
+├── data/                       # Pydantic response models
+└── api/app_test.py             # endpoints via Starlette TestClient
 ```
 
 ---
 
 ## Docker
 
-### Build the image
+### Build
 
 ```bash
-docker build -t news-search-summary-app:latest .
+docker build -t news-summary-agent:latest .
 ```
 
-The Dockerfile uses a two-stage build with a non-root `appuser` and exposes port `8003`:
-
-- **builder** installs the locked runtime dependencies with `uv sync --frozen --no-dev`
-  into `/app/.venv`. Only `pyproject.toml` and `uv.lock` are copied first, so source
-  edits do not invalidate the dependency layer.
-- **runtime** copies `/app/.venv`, puts it on `PATH`, and runs from `WORKDIR /app`
-  with `PYTHONPATH=src`.
-
-After changing dependencies (`uv add` / `uv remove`), commit both `pyproject.toml`
-and `uv.lock`; the image build fails on a stale lock by design (`--frozen`).
+The two-stage Dockerfile installs locked runtime deps with
+`uv sync --frozen --no-dev --no-install-project` into `/app/.venv`, then copies
+that venv into a slim runtime image that runs as a non-root `appuser` with
+`PYTHONPATH=src` and **exposes port 8007**. Because only `pyproject.toml` and
+`uv.lock` are copied before the dependency install, source edits don't bust the
+dependency layer. After `uv add`/`uv remove`, commit both files — `--frozen`
+fails the build on a stale lock.
 
 ### Run standalone
 
 ```bash
 docker run -d \
-  --name news-search-summary-app \
+  --name news-summary-agent \
   --network vault-network \
-  --network infra-network \
-  -p 8003:8003 \
+  --network services_network \
+  -p 8007:8007 \
   -e VAULT_ADDR=http://vault-server:8200 \
   -e VAULT_TOKEN=dev-root-token \
-  -e VAULT_SECRET_PATH=secret/DB_SERVICES \
-  news-search-summary-app:latest
+  -e VAULT_SECRET_PATH=secret/CREDENTIALS \
+  news-summary-agent:latest
 ```
 
-### Docker Compose
+### Compose
 
 ```bash
 export VAULT_TOKEN=dev-root-token
 docker compose up --build -d
 
-# Tail logs
-docker compose logs -f news-summary-app
-
-# Stop
+docker compose logs -f app   # service name is `app`
 docker compose down
 ```
 
-The service performs a health check every 60 s against `GET /health` and restarts
-automatically (`unless-stopped`) if it crashes.
-
----
-
-## Demo
-
-Screenshots and screen recordings live in the `demo/` folder.
-
-| File                                           | Description                                                |
-|------------------------------------------------|------------------------------------------------------------|
-| `demo/user_chat_interaction_live_session.webm` | End-to-end screen recording: startup → query → response    |
-| `demo/services_running_on_locale_docker.png`   | Services running in local docker                           |
-| `demo/user_chat_interaction_logs.png`          | User chat interaction logs                                 |
-
-
-
-> **Capturing recordings:**
->
-> Screenshots — any browser screenshot tool, or `flameshot` on Linux.
->
-> Screen recordings (.webm) — OBS Studio, `simplescreenrecorder`, or:
-> ```bash
-> ffmpeg -f x11grab -r 25 -s 1920x1080 -i :0.0 \
->   -c:v libvpx-vp9 demo/full-walkthrough.webm
-> ```
+The `app` service restarts `unless-stopped` and runs a healthcheck every 60 s
+against `GET /health`.
 
 ---
 
 ## Project Structure
 
 ```
-news_search_summary_app/
-├── demo/                        # Screenshots and screen recordings
+news-summary-agent/
+├── demo/                              # Screenshots and screen recordings
 ├── src/
-│   ├── agents/
-│   │   ├── base.py              # Shared ES client and data models
-│   │   ├── manager_agent.py     # Pipeline orchestrator
-│   │   ├── news_category_search_agent.py
-│   │   ├── news_search_agent.py
-│   │   └── news_summary_agent.py
+│   ├── adapters/
+│   │   ├── elasticsearch.py           # Cached Elasticsearch client factory
+│   │   ├── llm.py                     # Cached chat-model factory (gpt-4o-mini)
+│   │   ├── postgres.py                # Postgres connection for the checkpointer
+│   │   └── lifespan.py                # FastAPI lifespan — builds & injects the graph
 │   ├── api/
-│   │   └── app.py               # FastAPI application
+│   │   └── app.py                     # FastAPI application and routes
+│   ├── channels/                      # TypedDict state contracts + reducers
+│   │   ├── news_state.py              # NewsState (shared graph state)
+│   │   ├── article_reference.py       # ArticleReference (id + score)
+│   │   ├── article_hit.py             # ArticleHit (displayable metadata)
+│   │   ├── category_search_results.py # ClassifyIntent output
+│   │   ├── search_results.py          # Search output
+│   │   ├── summary_result.py          # Summary / guard-rail output
+│   │   └── summary_ok.py              # Graph output schema
 │   ├── config/
-│   │   ├── elastic_setup.py     # Properties file reader
-│   │   ├── logging_setup.py     # Logging config loader (vendored)
-│   │   └── vault_secrets.py     # Vault KV v2 → os.environ (vendored)
+│   │   ├── application_config.py      # YAML config loader (get_config)
+│   │   ├── logging_setup.py           # Logging configuration
+│   │   └── vault_secrets.py           # Vault KV v2 → os.environ
+│   ├── data/                          # Pydantic request/response models + seed replies
+│   ├── graph/
+│   │   ├── build_graph.py             # StateGraph assembly + routers
+│   │   └── run_graph_workflow.py      # Invoke graph → map to API response
+│   ├── nodes/
+│   │   ├── classification.py          # ClassifyIntent node
+│   │   ├── search.py                  # Search node
+│   │   └── summary.py                 # Summary node
 │   ├── resources/
-│   │   └── elastic-config.properties
-│   └── main.py                  # Uvicorn entry point
+│   │   ├── application-config.yaml    # Non-secret app config
+│   │   └── logging_config.json        # Logging dictConfig
+│   └── main.py                        # Standalone uvicorn entry point (port 8007)
 ├── static/
-│   └── chat-ui.html             # Browser chat interface (served at /)
-├── tests/
-│   ├── conftest.py
-│   ├── agents/
-│   │   ├── base_test.py
-│   │   ├── manager_agent_test.py
-│   │   ├── news_category_search_agent_test.py
-│   │   ├── news_search_agent_test.py
-│   │   └── news_summary_agent_test.py
-│   ├── api/
-│   │   └── app_test.py
-│   └── config/
-│       ├── elastic_setup_test.py
-│       ├── logging_setup_test.py
-│       └── vault_secrets_test.py
+│   └── chat-ui.html                   # Browser chat interface (served at /)
+├── tests/                             # pytest suite mirroring src/
 ├── Dockerfile
 ├── docker-compose.yml
-├── logging_config.json
-├── pyproject.toml               # Dependencies (runtime + dev group), ty config
+├── pyproject.toml                     # Dependencies (runtime + dev) and mypy config
 ├── pytest.ini
-└── uv.lock                      # Resolved, pinned dependency set
+└── uv.lock                            # Resolved, pinned dependency set
 ```
+
+CI runs via GitHub Actions (`.github/workflows/ci-cd-yml`) with a secret scan
+(`.github/workflows/gitleaks.yml`).
+
+---
+
+## Demo
+
+Screenshots and recordings live in `demo/`:
+
+| File | Description |
+|------|-------------|
+| `demo/user_chat_interaction_live_session.webm` | End-to-end recording: startup → query → response |
+| `demo/services_running_on_locale_docker.png` | Services running in local Docker |
+| `demo/user_chat_interaction_logs.png` | Chat interaction logs |
 
 ---
 
 ## Troubleshooting
 
-| Symptom                                                       | Likely cause                  | Fix                                                                                                       |
-|---------------------------------------------------------------|-------------------------------|-----------------------------------------------------------------------------------------------------------|
-| `RuntimeError: ELASTIC_URL and ELASTIC_API_KEY must be set`   | Vault secrets not loaded      | Verify `VAULT_ADDR`, `VAULT_TOKEN`, and `VAULT_SECRET_PATH` env vars                                      |
-| `GET /ready` returns 503                                      | Elasticsearch unreachable     | Check Elastic Cloud endpoint, API key, and network connectivity                                           |
-| `ConnectionError` on startup                                  | Docker network missing        | `docker network create vault-network && docker network create infra-network`                              |
-| Chat UI shows "Could not reach the server"                    | App not running or wrong port | Start the FastAPI server on port 8003                                                                     |
-| LangSmith traces not appearing                                | Missing env vars              | Set `LANGCHAIN_TRACING_V2=true` and `LANGCHAIN_API_KEY` in Vault                                          |
-| `422 Unprocessable Entity` on `/query`                        | Query string too short        | Minimum query length is 3 characters                                                                      |
+| Symptom | Likely cause | Fix |
+|---------|--------------|-----|
+| `RuntimeError: ELASTIC_URL and ELASTIC_READ_API_KEY must be set` | Vault secrets not loaded / `ELASTIC_URL` missing from YAML | Check `VAULT_ADDR`, `VAULT_TOKEN`, `VAULT_SECRET_PATH` and `application-config.yaml` |
+| `ValueError: VAULT_ADDR and VAULT_TOKEN must be set` | Bootstrap env vars missing | Export `VAULT_ADDR`, `VAULT_TOKEN`, `VAULT_SECRET_PATH` |
+| Startup `RuntimeError: ping returned False` | Elasticsearch unreachable | Verify the ES endpoint, API key, and connectivity |
+| App can't connect to Postgres on startup | Checkpointer DB unreachable / creds wrong | Check `POSTGRES_*` secrets and that Postgres is on `services_network` |
+| Docker run fails: network not found | Shared networks missing | `docker network create vault-network && docker network create services_network` |
+| Chat UI shows "Could not reach the server" | App not running or wrong port | Start the server on port **8007** |
+| LangSmith traces not appearing | Tracing env not set | Set `LANGCHAIN_TRACING_V2=true` and `LANGCHAIN_API_KEY` in Vault |
 
 ---
 
 ## Author
 
-**Srini Yedluri**
+Srini Yedluri

@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True, slots=True)
 class SeedData:
+    """Canned guard-rail replies (off-topic query / no results found)."""
     _OFF_TOPIC_REPLY = (
         "I'm a news search assistant and can only help with news-related queries. "
         "Please ask me about topics such as technology, politics, sports, business, "

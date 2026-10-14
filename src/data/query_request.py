@@ -1,4 +1,5 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class QueryRequest(BaseModel):
-    query: str  # Field(..., min_length=1, description="Natural language news query")
+    """Inbound POST /query request body."""
+    query: str = Field(..., description="Natural-language news query to summarize.")

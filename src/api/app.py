@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+from data.news_input import NewsInput
+
 """
 api/app.py
 
@@ -18,8 +20,8 @@ Endpoints:
 """
 from pydantic import Field
 from pathlib import Path
-from typing import Annotated, Union
-from graph.graph import run_graph
+from typing import Annotated, Any, Union, cast
+from graph.run_graph_workflow import run_graph
 from starlette.responses import FileResponse
 from starlette.staticfiles import StaticFiles
 from data.query_success_response import QuerySuccessResponse
@@ -30,7 +32,6 @@ from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from data.query_request import QueryRequest
 from langgraph.graph.state import CompiledStateGraph
-# from agents.manager_agent import run_manager_agent
 import logging
 from config.application_config import load_config
 from adapters.elasticsearch import get_es_client
@@ -42,14 +43,16 @@ load_secrets()
 load_config()
 get_es_client()
 from adapters.lifespan import lifespan
+
 app = FastAPI(
     title="News Summary Workflow",
     description="Agent Graph pipeline: Category Search → Semantic Search → Summarise -> Email (TODO)",
     version="1.0.0",
     lifespan=lifespan
 )
-def get_graph(request: Request) -> CompiledStateGraph:
-    return request.app.state.graph   
+def get_graph(request: Request) -> CompiledStateGraph[Any, None, Any, Any]:
+    """FastAPI dependency: return the compiled graph from application state."""
+    return cast("CompiledStateGraph[Any, None, Any, Any]", request.app.state.graph)
 
 app.add_middleware(
     CORSMiddleware,
@@ -69,11 +72,13 @@ chat_ui_path = Path(__name__).parent.parent
 
 
 @app.get("/")
-def serve_ui():
+def serve_ui() -> FileResponse:
+    """Serve the static chat UI (contextless HTML)."""
     return FileResponse(str(chat_ui_path) + "/static/chat-ui.html")
 
 @app.get("/health", tags=["Ops"])
-def health() -> dict:
+def health() -> dict[str, str]:
+    """Liveness probe."""
     return {"status": "ok"}
 
 @app.post(
@@ -85,13 +90,13 @@ def health() -> dict:
     responses={502: {"model": QueryFailedResponse, "description": "Agent failed"}},
     tags=["Pipeline"],
 )
-def query(request: QueryRequest, graph: Annotated[CompiledStateGraph, Depends(get_graph)]) -> QuerySuccessResponse | QueryFailedResponse:
+def query(request: QueryRequest, graph: Annotated[CompiledStateGraph[Any, None, Any, Any], Depends(get_graph)]) -> QuerySuccessResponse | QueryFailedResponse:
     """
     Run the full agent graph news summary for a query using ElasticSearch and Qdrant as RAG backend.
     """
     logger.info("POST /query  query=%r", request.query)
+    user_input = NewsInput(query=request.query)
     response: QuerySuccessResponse | QueryFailedResponse = run_graph(
-        {"query": str(request.query)}, graph)
-    # run_manager_agent(str(request.query))  # ty: ignore[invalid-argument-type]  # T03-S15: langsmith 0.1.x ParamSpec; remove after upgrade
+    user_input, graph)
     return response
 

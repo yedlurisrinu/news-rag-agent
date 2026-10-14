@@ -1,9 +1,10 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class QueryFailedResponse(BaseModel):
-    query: str
-    error: str
-    error_code: int
+    """Failed /query response (status='failed')."""
+    query: str = Field(..., description="The original user query.")
+    error: str = Field(..., description="Human-readable error message or exception type.")
+    error_code: int = Field(..., description="HTTP-style status code for the failure.")
     status: Literal["failed"] = "failed"

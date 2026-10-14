@@ -1,10 +1,3 @@
-"""
-@Author: Srini Yedluri
-@Date: 3/27/26
-@Time: 11:48 AM
-@File: base.py
-"""
-
 from __future__ import annotations
 
 """
@@ -28,7 +21,7 @@ def get_es_client() -> Elasticsearch:
     Build and return a cached Elasticsearch client.
     Expects the following env vars (loaded from Vault):
       ELASTIC_API_KEY    — Elastic Cloud API key
-      And other config values loaded form elastic-config.properties
+      And other config values loaded form application-config.properties
     """
 
     elastic_url = get_config("ELASTIC_URL")

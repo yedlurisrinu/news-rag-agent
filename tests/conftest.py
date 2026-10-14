@@ -2,132 +2,79 @@
 conftest.py — pytest fixtures shared across all test modules.
 
 Provides:
-  - Common ArticleHit / CategorySearchResult / NewsSearchResult builders.
-  - A reusable mock Elasticsearch client.
+  - A session-wide real application config load (nodes read query templates from it).
+  - Factory fixtures for a fake chat model (FakeListChatModel) and a mock
+    Elasticsearch client, so nodes/graph run with no external services.
 """
 
 from __future__ import annotations
 
-import sys
-import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
-# Note: langsmith IS installed in the venv (langsmith==0.1.120) so no stub is
-# needed.  The @traceable decorator will be a no-op in tests because
-# LANGCHAIN_TRACING_V2 is not set in the test environment.
 
-# ---------------------------------------------------------------------------
-# Shared fixtures
-# ---------------------------------------------------------------------------
+@pytest.fixture(scope="session", autouse=True)
+def _load_app_config():
+    """Load the real resources/application-config.yaml once for the whole test session.
 
-
-@pytest.fixture()
-def sample_article_hit():
-    """Return a single populated ArticleHit."""
-    from adapters.elasticsearch import ArticleHit
-
-    return ArticleHit(
-        article_id="abc-123",
-        title="AI Revolutionises Healthcare",
-        content="Artificial intelligence is transforming how doctors diagnose diseases.",
-        source="TechNews",
-        published_at="2026-03-28T10:00:00Z",
-        link="https://technews.example.com/ai-health",
-        score=1.42,
-    )
-
-
-@pytest.fixture()
-def sample_articles(sample_article_hit):
-    """Return a small list of ArticleHit objects."""
-    from adapters.elasticsearch import ArticleHit
-
-    second = ArticleHit(
-        article_id="def-456",
-        title="Global Markets Rally on Trade News",
-        content="Stock markets surged worldwide following positive trade developments.",
-        source="FinanceDaily",
-        published_at="2026-03-27T08:30:00Z",
-        link="https://financedaily.example.com/markets",
-        score=1.10,
-    )
-    return [sample_article_hit, second]
-
-
-@pytest.fixture()
-def category_result():
-    """Return a CategorySearchResult for technology topics."""
-    from adapters.elasticsearch import CategorySearchResult
-
-    return CategorySearchResult(
-        categories=["technology", "ai"], fetch_latest=False, is_news_query=True
-    )
-
-
-@pytest.fixture()
-def category_result_latest():
-    """Return a CategorySearchResult with fetch_latest=True."""
-    from adapters.elasticsearch import CategorySearchResult
-
-    return CategorySearchResult(
-        categories=["technology"], fetch_latest=True, is_news_query=True
-    )
-
-
-@pytest.fixture()
-def off_topic_category_result():
-    """Return a CategorySearchResult flagged as non-news."""
-    from adapters.elasticsearch import CategorySearchResult
-
-    return CategorySearchResult(categories=[], fetch_latest=False, is_news_query=False)
-
-
-@pytest.fixture()
-def news_search_result(sample_articles):
-    """Return a NewsSearchResult wrapping sample_articles."""
-    from adapters.elasticsearch import NewsSearchResult
-
-    return NewsSearchResult(articles=sample_articles, query_used="latest AI news")
-
-
-@pytest.fixture()
-def empty_search_result():
-    """Return a NewsSearchResult with no articles."""
-    from adapters.elasticsearch import NewsSearchResult
-
-    return NewsSearchResult(articles=[], query_used="obscure topic")
-
-
-@pytest.fixture()
-def mock_es_client():
-    """Return a MagicMock that mimics the Elasticsearch client."""
-    client = MagicMock()
-    client.ping.return_value = True
-    return client
-
-
-@pytest.fixture()
-def es_search_response(sample_articles):
+    Nodes build their ES queries from get_config("CATEGORY_QUERY") /
+    "SEARCH_QUERY_TEMPLATE" / "ES_INDEX", so the config dict must be populated.
     """
-    Return a dict that looks like an ES search response containing
-    two article hits.
+    from config.application_config import load_config
+
+    load_config()
+
+
+@pytest.fixture()
+def make_llm():
+    """Return a factory building a FakeListChatModel from canned responses.
+
+    The fake model is a real Runnable, so ``prompt | llm | parser`` works; it
+    cycles through ``responses`` in order (JSON for classify, prose for summary).
     """
-    hits = []
-    for art in sample_articles:
-        hits.append(
-            {
-                "_id": art.article_id,
-                "_score": art.score,
-                "_source": {
-                    "article_id": art.article_id,
-                    "title": art.title,
-                    "content": art.content,
-                    "source": art.source,
-                    "published_at": art.published_at,
-                    "link": art.link,
-                },
-            }
-        )
-    return {"hits": {"total": {"value": len(hits)}, "hits": hits}}
+    from langchain_core.language_models.fake_chat_models import FakeListChatModel
+
+    def _make(responses: list[str]):
+        return FakeListChatModel(responses=responses)
+
+    return _make
+
+
+@pytest.fixture()
+def make_es():
+    """Return a factory building a MagicMock Elasticsearch client.
+
+    ``search_response`` feeds es.search(); ``mget_response`` feeds es.mget().
+    """
+
+    def _make(search_response: dict | None = None, mget_response: dict | None = None):
+        es = MagicMock()
+        es.search.return_value = search_response or {
+            "hits": {"total": {"value": 0}, "hits": []}
+        }
+        es.mget.return_value = mget_response or {"docs": []}
+        return es
+
+    return _make
+
+
+@pytest.fixture()
+def es_hit():
+    """A single ES search hit shaped like a real response document."""
+    return {"_source": {"article_id": "a1"}, "_score": 1.23}
+
+
+@pytest.fixture()
+def es_doc():
+    """A single ES mget document with full article content."""
+    return {
+        "_source": {
+            "article_id": "a1",
+            "title": "AI Revolutionises Healthcare",
+            "source": "TechNews",
+            "published_at": "2026-03-28T10:00:00Z",
+            "link": "https://technews.example.com/ai-health",
+            "content": "Artificial intelligence is transforming diagnosis. " * 60,
+        }
+    }

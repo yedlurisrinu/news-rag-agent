@@ -1,8 +1,15 @@
+"""PostgreSQL adapter — raw connection used to back the LangGraph checkpointer."""
 import os
 from psycopg import Connection
-from psycopg.rows import dict_row
+from psycopg.rows import DictRow, dict_row
 
-def connect_postgres() -> Connection:
+def connect_postgres() -> Connection[DictRow]:
+    """Open an autocommit Postgres connection for the ``PostgresSaver`` checkpointer.
+
+    Connection params come from env vars (``PG_HOST``, ``PG_PORT``, ``POSTGRES_DB``,
+    ``POSTGRES_USER``, ``POSTGRES_PASSWORD``) loaded from Vault at startup. The
+    returned object is used as a context manager in the FastAPI lifespan.
+    """
     return Connection.connect(
             host=os.environ.get("PG_HOST","localhost"),
             port=int(os.environ.get("PG_PORT", "5432")),

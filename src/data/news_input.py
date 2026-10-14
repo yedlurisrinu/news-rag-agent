@@ -1,4 +1,5 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class NewsInput(BaseModel):
-    query: str
+    """Internal request object passed into the graph workflow."""
+    query: str = Field(..., description="Natural-language news query from the user.")
